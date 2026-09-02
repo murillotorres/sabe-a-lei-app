@@ -4,7 +4,7 @@ import SwiftUI
 struct SabeALeiApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MainTabView()
         }
     }
 }
