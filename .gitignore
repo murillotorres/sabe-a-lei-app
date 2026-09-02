@@ -1,0 +1,14 @@
+# Xcode / XcodeGen
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# PHP / Composer (api/)
+api/vendor/
+api/.env
