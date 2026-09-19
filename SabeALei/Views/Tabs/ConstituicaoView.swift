@@ -15,11 +15,32 @@ struct ConstituicaoView: View {
 
     private var filteredArtigos: [Artigo] {
         guard !searchText.isEmpty else { return artigos }
+
+        // "5", "art 5", "art. 5" ou "a5" busca o artigo específico, não um texto solto.
+        if let numero = Self.numeroReferenciado(searchText) {
+            return artigos.filter { $0.numero == numero }
+        }
+
         return artigos.filter {
             $0.numero.localizedCaseInsensitiveContains(searchText)
                 || $0.titulo.localizedCaseInsensitiveContains(searchText)
                 || $0.caput.localizedCaseInsensitiveContains(searchText)
         }
+    }
+
+    /// Reconhece referências a um artigo específico ("5", "art5", "art 5", "art. 5",
+    /// "a5", "103-A"...) e devolve o número normalizado, ou `nil` se o texto não for isso.
+    private static func numeroReferenciado(_ texto: String) -> String? {
+        let trimmed = texto.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        guard let match = trimmed.wholeMatch(of: /(?:art\.?|a\.?)?\s*(\d+)(?:-([a-zA-Z]))?/.ignoresCase()) else {
+            return nil
+        }
+
+        let numero = String(match.1)
+        guard let letra = match.2 else { return numero }
+        return "\(numero)-\(letra.uppercased())"
     }
 
     var body: some View {
