@@ -9,8 +9,8 @@ DerivedData/
 # macOS
 .DS_Store
 
-# Backend — kept out of this repo entirely; only the iOS app is public here.
-api/
+# Backend — código versionado, mas segredos reais ficam de fora.
+api/.env
 
 # Local tooling config (Claude Code permission cache, machine-specific)
 .claude/

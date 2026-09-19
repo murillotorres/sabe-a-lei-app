@@ -1,0 +1,13 @@
+# Reabre o acesso aqui dentro — api/.htaccess bloqueia tudo por padrão
+# (Require all denied cai em cascata para subpastas se não for revertido).
+<IfModule mod_authz_core.c>
+    Require all granted
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Allow from all
+</IfModule>
+
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [QSA,L]

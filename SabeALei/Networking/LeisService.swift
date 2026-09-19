@@ -11,11 +11,12 @@ enum LeisService {
         return response.leis
     }
 
-    static func artigos(leiSlug: String, parte: ParteConstitucional) async throws -> ArtigosResponse {
-        try await APIClient.shared.get(
-            "/leis/\(leiSlug)/artigos",
-            query: ["parte": parte.rawValue]
-        )
+    static func artigos(leiSlug: String, parte: ParteConstitucional, busca: String? = nil) async throws -> ArtigosResponse {
+        var query = ["parte": parte.rawValue]
+        if let busca, !busca.isEmpty {
+            query["q"] = busca
+        }
+        return try await APIClient.shared.get("/leis/\(leiSlug)/artigos", query: query)
     }
 
     static func artigo(id: Int) async throws -> ArtigoDetalheResponse {

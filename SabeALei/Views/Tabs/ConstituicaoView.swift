@@ -11,9 +11,11 @@ struct ConstituicaoView: View {
 
     @State private var isSearching = false
     @State private var searchText = ""
+    @State private var searchResults: [Artigo] = []
+    @State private var isSearchingRemote = false
     @FocusState private var searchFieldFocused: Bool
 
-    private var filteredArtigos: [Artigo] {
+    private var displayedArtigos: [Artigo] {
         guard !searchText.isEmpty else { return artigos }
 
         // "5", "art 5", "art. 5" ou "a5" busca o artigo específico, não um texto solto.
@@ -21,11 +23,9 @@ struct ConstituicaoView: View {
             return artigos.filter { $0.numero == numero }
         }
 
-        return artigos.filter {
-            $0.numero.localizedCaseInsensitiveContains(searchText)
-                || $0.titulo.localizedCaseInsensitiveContains(searchText)
-                || $0.caput.localizedCaseInsensitiveContains(searchText)
-        }
+        // Texto solto: busca no servidor, que olha também o conteúdo dos
+        // dispositivos (parágrafos/incisos/alíneas), não só o caput.
+        return searchResults
     }
 
     /// Reconhece referências a um artigo específico ("5", "art5", "art 5", "art. 5",
@@ -62,6 +62,9 @@ struct ConstituicaoView: View {
             .toolbar(.hidden, for: .navigationBar)
             .task(id: parte) {
                 await load()
+            }
+            .task(id: "\(parte.rawValue)|\(searchText)") {
+                await search()
             }
         }
     }
@@ -132,12 +135,46 @@ struct ConstituicaoView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if !searchText.isEmpty && filteredArtigos.isEmpty {
+        } else if isSearchingRemote && searchResults.isEmpty {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if !searchText.isEmpty && displayedArtigos.isEmpty {
             ContentUnavailableView.search(text: searchText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ArtigoListView(artigos: filteredArtigos)
+            ArtigoListView(artigos: displayedArtigos)
         }
+    }
+
+    /// Busca no servidor com debounce: só dispara a requisição depois que o
+    /// usuário pausa a digitação, e descarta o resultado se o texto já tiver
+    /// mudado (ou virado uma referência a artigo) nesse meio-tempo.
+    private func search() async {
+        guard !searchText.isEmpty, Self.numeroReferenciado(searchText) == nil else {
+            searchResults = []
+            isSearchingRemote = false
+            return
+        }
+
+        do {
+            try await Task.sleep(nanoseconds: 300_000_000)
+        } catch {
+            return
+        }
+
+        isSearchingRemote = true
+
+        let resultado: [Artigo]
+        do {
+            let response = try await LeisService.artigos(leiSlug: constituicaoSlug, parte: parte, busca: searchText)
+            resultado = response.artigos
+        } catch {
+            resultado = []
+        }
+
+        guard !Task.isCancelled else { return }
+        searchResults = resultado
+        isSearchingRemote = false
     }
 
     private func load(force: Bool = false) async {
