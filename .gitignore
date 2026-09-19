@@ -9,6 +9,11 @@ DerivedData/
 # macOS
 .DS_Store
 
-# PHP / Composer (api/)
-api/vendor/
-api/.env
+# Backend — kept out of this repo entirely; only the iOS app is public here.
+api/
+
+# Local tooling config (Claude Code permission cache, machine-specific)
+.claude/
+
+# Local signing config (Apple Developer Team ID) — copy Local.xcconfig.example
+SabeALei/Config/Local.xcconfig

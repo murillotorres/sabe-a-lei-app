@@ -1,0 +1,4 @@
+// Copy this file to Local.xcconfig (gitignored) and fill in your own Apple
+// Developer Team ID to build/sign locally: xcrun xcodebuild -showBuildSettings
+// or Xcode > Settings > Accounts shows it once you're signed in.
+DEVELOPMENT_TEAM = YOUR_TEAM_ID_HERE
