@@ -9,9 +9,24 @@ struct ConstituicaoView: View {
     @State private var errorMessage: String?
     @State private var loadedParte: ParteConstitucional?
 
+    @State private var isSearching = false
+    @State private var searchText = ""
+    @FocusState private var searchFieldFocused: Bool
+
+    private var filteredArtigos: [Artigo] {
+        guard !searchText.isEmpty else { return artigos }
+        return artigos.filter {
+            $0.numero.localizedCaseInsensitiveContains(searchText)
+                || $0.titulo.localizedCaseInsensitiveContains(searchText)
+                || $0.caput.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                header
+
                 Picker("Parte", selection: $parte) {
                     ForEach(ParteConstitucional.allCases, id: \.self) { parte in
                         Text(parte.titulo).tag(parte)
@@ -22,11 +37,62 @@ struct ConstituicaoView: View {
 
                 content
             }
-            .navigationTitle("Constituição")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .task(id: parte) {
                 await load()
             }
         }
+    }
+
+    @ViewBuilder
+    private var header: some View {
+        HStack(spacing: 12) {
+            if isSearching {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Buscar por número ou texto...", text: $searchText)
+                        .focused($searchFieldFocused)
+                        .submitLabel(.search)
+                        .autocorrectionDisabled()
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(8)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+
+                Button("Cancelar") {
+                    withAnimation {
+                        isSearching = false
+                        searchFieldFocused = false
+                    }
+                    searchText = ""
+                }
+            } else {
+                Text("Constituição")
+                    .font(.largeTitle.bold())
+                Spacer()
+                Button {
+                    withAnimation {
+                        isSearching = true
+                    }
+                    searchFieldFocused = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.title2)
+                }
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .animation(.default, value: isSearching)
     }
 
     @ViewBuilder
@@ -45,8 +111,11 @@ struct ConstituicaoView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if !searchText.isEmpty && filteredArtigos.isEmpty {
+            ContentUnavailableView.search(text: searchText)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ArtigoListView(artigos: artigos)
+            ArtigoListView(artigos: filteredArtigos)
         }
     }
 
