@@ -9,8 +9,9 @@ DerivedData/
 # macOS
 .DS_Store
 
-# Backend — código versionado, mas segredos reais ficam de fora.
+# Backend — código versionado, mas segredos reais e dados do banco ficam de fora.
 api/.env
+api/database/*.sql
 
 # Local tooling config (Claude Code permission cache, machine-specific)
 .claude/

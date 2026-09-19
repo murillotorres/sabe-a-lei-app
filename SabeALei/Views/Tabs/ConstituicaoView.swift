@@ -257,10 +257,50 @@ struct ArtigoCardView: View {
             Text(artigo.caput)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
-                .lineLimit(4)
+                .lineLimit(artigo.trechoCorrespondente == nil ? 4 : 2)
+
+            if let trecho = artigo.trechoCorrespondente {
+                TrechoCorrespondenteView(trecho: trecho)
+            }
         }
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// Mostra o dispositivo (parágrafo/inciso/alínea) em que uma busca por texto
+/// encontrou o termo, quando ele não está no caput exibido acima.
+private struct TrechoCorrespondenteView: View {
+    let trecho: TrechoCorrespondente
+
+    private var corDestaque: Color {
+        switch trecho.tipo {
+        case "paragrafo": return .blue
+        case "inciso": return .teal
+        case "alinea": return .orange
+        default: return .secondary
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(trecho.rotulo)
+                .font(.caption2.bold())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(corDestaque, in: Capsule())
+                .fixedSize()
+
+            Text(trecho.texto)
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.yellow.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.yellow.opacity(0.5), lineWidth: 1))
     }
 }
 

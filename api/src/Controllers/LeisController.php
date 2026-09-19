@@ -91,7 +91,7 @@ final class LeisController
 
     private function formatArtigo(array $a): array
     {
-        return [
+        $artigo = [
             'id' => (int) $a['id'],
             'parte' => $a['parte'],
             'numero' => $a['numero'],
@@ -105,5 +105,11 @@ final class LeisController
             'leiSlug' => $a['lei_slug'] ?? null,
             'leiTitulo' => $a['lei_titulo'] ?? null,
         ];
+
+        if (isset($a['trecho_correspondente'])) {
+            $artigo['trechoCorrespondente'] = $a['trecho_correspondente'];
+        }
+
+        return $artigo;
     }
 }

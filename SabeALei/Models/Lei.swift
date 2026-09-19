@@ -40,6 +40,9 @@ struct Artigo: Codable, Identifiable, Equatable {
     let ordem: Int
     let leiSlug: String?
     let leiTitulo: String?
+    /// Presente só em resultados de busca por texto: o dispositivo (parágrafo/
+    /// inciso/alínea) do artigo em que as palavras buscadas foram encontradas.
+    let trechoCorrespondente: TrechoCorrespondente?
 
     var titulo: String {
         numero == "Preâmbulo" ? "Preâmbulo" : "Art. \(numero)"
@@ -50,6 +53,12 @@ struct Artigo: Codable, Identifiable, Equatable {
         let partes = [tituloEstrutural, capituloEstrutural, secaoEstrutural, subsecaoEstrutural].compactMap { $0 }
         return partes.isEmpty ? nil : partes.joined(separator: " · ")
     }
+}
+
+struct TrechoCorrespondente: Codable, Equatable {
+    let tipo: String
+    let rotulo: String
+    let texto: String
 }
 
 struct ArtigoDispositivo: Codable, Identifiable, Equatable {

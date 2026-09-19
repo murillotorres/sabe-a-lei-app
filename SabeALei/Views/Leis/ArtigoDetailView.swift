@@ -140,7 +140,8 @@ struct DispositivoCardView: View {
                 tituloEstrutural: "Título II", capituloEstrutural: "Capítulo I",
                 secaoEstrutural: nil, subsecaoEstrutural: nil,
                 caput: "Todos são iguais perante a lei...",
-                revogado: false, ordem: 5, leiSlug: nil, leiTitulo: nil
+                revogado: false, ordem: 5, leiSlug: nil, leiTitulo: nil,
+                trechoCorrespondente: nil
             )
         )
     }

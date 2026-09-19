@@ -38,18 +38,26 @@ final class Artigo
             return [];
         }
 
-        $textosDispositivos = self::textosDispositivosPorArtigo(
+        $dispositivosPorArtigo = self::dispositivosPorArtigo(
             array_map(static fn (array $a) => (int) $a['id'], $artigos)
         );
 
         $pontuados = [];
         foreach ($artigos as $artigo) {
-            $texto = self::normalizar($artigo['caput'] . ' ' . ($textosDispositivos[(int) $artigo['id']] ?? ''));
+            $dispositivos = $dispositivosPorArtigo[(int) $artigo['id']] ?? [];
+            $textoCombinado = self::normalizar(
+                $artigo['caput'] . ' ' . implode(' ', array_column($dispositivos, 'texto'))
+            );
 
-            $pontuacao = self::pontuar($texto, $tokens);
+            $pontuacao = self::pontuar($textoCombinado, $tokens);
             if ($pontuacao === 0) {
                 continue;
             }
+
+            // Quando a busca "bate" em algum dispositivo (parágrafo/inciso/alínea),
+            // não só no caput, devolve esse trecho junto — é o que explica pro
+            // usuário por que aquele artigo apareceu no resultado.
+            $artigo['trecho_correspondente'] = self::trechoCorrespondente($dispositivos, $tokens);
 
             $pontuados[] = ['artigo' => $artigo, 'pontuacao' => $pontuacao];
         }
@@ -63,8 +71,8 @@ final class Artigo
         return array_map(static fn (array $p) => $p['artigo'], $pontuados);
     }
 
-    /// Mapa artigo_id => texto concatenado de todos os seus dispositivos.
-    private static function textosDispositivosPorArtigo(array $artigoIds): array
+    /// Mapa artigo_id => lista de seus dispositivos (rotulo, texto, tipo).
+    private static function dispositivosPorArtigo(array $artigoIds): array
     {
         if ($artigoIds === []) {
             return [];
@@ -72,17 +80,44 @@ final class Artigo
 
         $placeholders = implode(',', array_fill(0, count($artigoIds), '?'));
         $stmt = Database::connection()->prepare(
-            "SELECT artigo_id, texto FROM artigo_dispositivos WHERE artigo_id IN ($placeholders)"
+            "SELECT artigo_id, tipo, rotulo, texto FROM artigo_dispositivos
+             WHERE artigo_id IN ($placeholders) ORDER BY ordem"
         );
         $stmt->execute($artigoIds);
 
-        $textos = [];
+        $porArtigo = [];
         foreach ($stmt->fetchAll() as $row) {
-            $id = (int) $row['artigo_id'];
-            $textos[$id] = ($textos[$id] ?? '') . ' ' . $row['texto'];
+            $porArtigo[(int) $row['artigo_id']][] = $row;
         }
 
-        return $textos;
+        return $porArtigo;
+    }
+
+    /// O dispositivo (parágrafo/inciso/alínea) que melhor casa com a busca,
+    /// para mostrar ao usuário qual trecho interno do artigo motivou o resultado.
+    /// `null` quando a busca bateu só no caput, sem nenhum dispositivo relevante.
+    private static function trechoCorrespondente(array $dispositivos, array $tokens): ?array
+    {
+        $melhor = null;
+        $melhorPontuacao = 0;
+
+        foreach ($dispositivos as $dispositivo) {
+            $pontuacao = self::pontuar(self::normalizar($dispositivo['texto']), $tokens);
+            if ($pontuacao > $melhorPontuacao) {
+                $melhorPontuacao = $pontuacao;
+                $melhor = $dispositivo;
+            }
+        }
+
+        if ($melhor === null) {
+            return null;
+        }
+
+        return [
+            'tipo' => $melhor['tipo'],
+            'rotulo' => $melhor['rotulo'],
+            'texto' => $melhor['texto'],
+        ];
     }
 
     /// Pontuação de compatibilidade de um texto com as palavras buscadas: pesa
