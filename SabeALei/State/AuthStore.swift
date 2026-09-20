@@ -9,7 +9,7 @@ final class AuthStore {
 
     var isAuthenticated: Bool { currentUser != nil }
 
-    private var token: String? {
+    private(set) var token: String? {
         didSet {
             if let token {
                 KeychainStore.saveToken(token)

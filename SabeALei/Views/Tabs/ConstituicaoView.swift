@@ -200,6 +200,12 @@ struct ConstituicaoView: View {
 struct ArtigoListView: View {
     let artigos: [Artigo]
 
+    @Environment(AuthStore.self) private var authStore
+    @Environment(FavoritosStore.self) private var favoritosStore
+    /// Id do artigo tocado — usado com `navigationDestination(item:)` em vez de
+    /// `NavigationLink`, que sempre desenha a setinha de disclosure na List.
+    @State private var artigoIdSelecionado: Int?
+
     private var grupos: [(titulo: String?, artigos: [Artigo])] {
         var result: [(titulo: String?, artigos: [Artigo])] = []
         for artigo in artigos {
@@ -217,12 +223,27 @@ struct ArtigoListView: View {
             ForEach(Array(grupos.enumerated()), id: \.offset) { _, grupo in
                 Section {
                     ForEach(grupo.artigos) { artigo in
-                        NavigationLink {
-                            ArtigoDetailView(artigoId: artigo.id, resumo: artigo)
+                        Button {
+                            artigoIdSelecionado = artigo.id
                         } label: {
                             ArtigoCardView(artigo: artigo)
                         }
+                        .buttonStyle(.plain)
                         .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .swipeActions(edge: .trailing) {
+                            if authStore.isAuthenticated {
+                                let favoritado = favoritosStore.estaFavoritado(artigoId: artigo.id, dispositivoId: nil)
+                                Button {
+                                    alternarFavorito(artigo)
+                                } label: {
+                                    Label(
+                                        favoritado ? "Remover" : "Favoritar",
+                                        systemImage: favoritado ? "star.slash.fill" : "star.fill"
+                                    )
+                                }
+                                .tint(favoritado ? .gray : .yellow)
+                            }
+                        }
                     }
                 } header: {
                     if let titulo = grupo.titulo {
@@ -232,6 +253,18 @@ struct ArtigoListView: View {
             }
         }
         .listStyle(.plain)
+        .navigationDestination(item: $artigoIdSelecionado) { id in
+            if let artigo = artigos.first(where: { $0.id == id }) {
+                ArtigoDetailView(artigoId: id, resumo: artigo)
+            }
+        }
+    }
+
+    private func alternarFavorito(_ artigo: Artigo) {
+        guard let token = authStore.token else { return }
+        Task {
+            await favoritosStore.alternar(artigoId: artigo.id, dispositivoId: nil, token: token)
+        }
     }
 }
 
@@ -269,8 +302,9 @@ struct ArtigoCardView: View {
 }
 
 /// Mostra o dispositivo (parágrafo/inciso/alínea) em que uma busca por texto
-/// encontrou o termo, quando ele não está no caput exibido acima.
-private struct TrechoCorrespondenteView: View {
+/// encontrou o termo, quando ele não está no caput exibido acima. Também
+/// reaproveitado para mostrar o parágrafo favoritado na tela Principal.
+struct TrechoCorrespondenteView: View {
     let trecho: TrechoCorrespondente
 
     private var corDestaque: Color {
@@ -306,4 +340,6 @@ private struct TrechoCorrespondenteView: View {
 
 #Preview {
     ConstituicaoView()
+        .environment(AuthStore())
+        .environment(FavoritosStore())
 }

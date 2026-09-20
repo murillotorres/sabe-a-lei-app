@@ -53,7 +53,7 @@ struct ArtigoDetailView: View {
                         .padding(.top, 24)
                 } else {
                     ForEach(dispositivosFiltrados) { dispositivo in
-                        DispositivoCardView(dispositivo: dispositivo, destacado: !searchText.isEmpty)
+                        DispositivoCardView(dispositivo: dispositivo, artigoId: artigoId, destacado: !searchText.isEmpty)
                     }
                 }
             }
@@ -86,6 +86,10 @@ struct ArtigoDetailView: View {
 private struct ArtigoCaputCardView: View {
     let artigo: Artigo
 
+    @Environment(AuthStore.self) private var authStore
+    @Environment(FavoritosStore.self) private var favoritosStore
+    @State private var isToggling = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -99,6 +103,10 @@ private struct ArtigoCaputCardView: View {
                         .background(.red.opacity(0.15), in: Capsule())
                         .foregroundStyle(.red)
                 }
+                Spacer()
+                if authStore.isAuthenticated {
+                    FavoritoButton(isFavorito: isFavorito, isToggling: isToggling, acao: alternarFavorito)
+                }
             }
             Text(artigo.caput)
                 .font(.body)
@@ -107,14 +115,50 @@ private struct ArtigoCaputCardView: View {
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
     }
+
+    private var isFavorito: Bool {
+        favoritosStore.estaFavoritado(artigoId: artigo.id, dispositivoId: nil)
+    }
+
+    private func alternarFavorito() {
+        guard let token = authStore.token else { return }
+        isToggling = true
+        Task {
+            await favoritosStore.alternar(artigoId: artigo.id, dispositivoId: nil, token: token)
+            isToggling = false
+        }
+    }
+}
+
+/// Botão de estrela reaproveitado no artigo (card do caput) e em cada
+/// parágrafo — o único tipo de dispositivo que também pode ser favoritado.
+private struct FavoritoButton: View {
+    let isFavorito: Bool
+    let isToggling: Bool
+    let acao: () -> Void
+
+    var body: some View {
+        Button(action: acao) {
+            Image(systemName: isFavorito ? "star.fill" : "star")
+                .foregroundStyle(isFavorito ? .yellow : .secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(isToggling)
+    }
 }
 
 /// Um card por parágrafo/inciso/alínea/item, indentado conforme o nível de aninhamento.
 struct DispositivoCardView: View {
     let dispositivo: ArtigoDispositivo
+    /// Artigo dono deste dispositivo — precisa pra favoritar o parágrafo.
+    let artigoId: Int
     /// true quando este card é resultado de uma busca dentro do artigo — pinta
     /// o fundo de amarelo, no mesmo estilo do trecho destacado na busca geral.
     var destacado: Bool = false
+
+    @Environment(AuthStore.self) private var authStore
+    @Environment(FavoritosStore.self) private var favoritosStore
+    @State private var isToggling = false
 
     private var accentColor: Color {
         switch dispositivo.tipo {
@@ -123,6 +167,16 @@ struct DispositivoCardView: View {
         case "alinea": return .orange
         default: return .secondary
         }
+    }
+
+    /// Só parágrafos podem ser favoritados (junto com o artigo inteiro) —
+    /// incisos e alíneas não, mesma regra validada no backend.
+    private var podeFavoritar: Bool {
+        dispositivo.tipo == "paragrafo" && authStore.isAuthenticated
+    }
+
+    private var isFavorito: Bool {
+        favoritosStore.estaFavoritado(artigoId: artigoId, dispositivoId: dispositivo.id)
     }
 
     var body: some View {
@@ -147,6 +201,11 @@ struct DispositivoCardView: View {
                         .foregroundStyle(.red)
                 }
             }
+
+            if podeFavoritar {
+                Spacer(minLength: 8)
+                FavoritoButton(isFavorito: isFavorito, isToggling: isToggling, acao: alternarFavorito)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -160,6 +219,15 @@ struct DispositivoCardView: View {
         )
         .padding(.leading, CGFloat(max(0, dispositivo.nivel - 1)) * 20)
         .opacity(dispositivo.revogado ? 0.6 : 1)
+    }
+
+    private func alternarFavorito() {
+        guard let token = authStore.token else { return }
+        isToggling = true
+        Task {
+            await favoritosStore.alternar(artigoId: artigoId, dispositivoId: dispositivo.id, token: token)
+            isToggling = false
+        }
     }
 }
 
@@ -261,4 +329,6 @@ private enum BuscaTexto {
             )
         )
     }
+    .environment(AuthStore())
+    .environment(FavoritosStore())
 }

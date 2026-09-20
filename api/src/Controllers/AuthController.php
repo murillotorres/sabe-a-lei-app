@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\Auth;
 use App\Core\Env;
 use App\Core\Jwt;
 use App\Core\Request;
@@ -67,8 +68,8 @@ final class AuthController
 
     public function me(Request $request): void
     {
-        $payload = $this->authenticate($request);
-        $user = User::findById((int) $payload['sub']);
+        $userId = Auth::userId($request);
+        $user = User::findById($userId);
 
         if ($user === null) {
             Response::error('Usuário não encontrado.', 404);
@@ -80,22 +81,5 @@ final class AuthController
     private function issueToken(int $userId): string
     {
         return Jwt::encode(['sub' => $userId], Env::required('JWT_SECRET'));
-    }
-
-    private function authenticate(Request $request): array
-    {
-        $token = $request->bearerToken();
-
-        if ($token === null) {
-            Response::error('Não autenticado.', 401);
-        }
-
-        $payload = Jwt::decode($token, Env::required('JWT_SECRET'));
-
-        if ($payload === null || !isset($payload['sub'])) {
-            Response::error('Token inválido ou expirado.', 401);
-        }
-
-        return $payload;
     }
 }

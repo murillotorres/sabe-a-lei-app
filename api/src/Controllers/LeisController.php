@@ -91,20 +91,7 @@ final class LeisController
 
     private function formatArtigo(array $a): array
     {
-        $artigo = [
-            'id' => (int) $a['id'],
-            'parte' => $a['parte'],
-            'numero' => $a['numero'],
-            'tituloEstrutural' => $a['titulo_estrutural'],
-            'capituloEstrutural' => $a['capitulo_estrutural'],
-            'secaoEstrutural' => $a['secao_estrutural'],
-            'subsecaoEstrutural' => $a['subsecao_estrutural'],
-            'caput' => $a['caput'],
-            'revogado' => (bool) $a['revogado'],
-            'ordem' => (int) $a['ordem'],
-            'leiSlug' => $a['lei_slug'] ?? null,
-            'leiTitulo' => $a['lei_titulo'] ?? null,
-        ];
+        $artigo = Artigo::formatar($a);
 
         if (isset($a['trecho_correspondente'])) {
             $artigo['trechoCorrespondente'] = $a['trecho_correspondente'];

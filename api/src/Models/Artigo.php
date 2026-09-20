@@ -248,4 +248,37 @@ final class Artigo
 
         return $stmt->fetchAll();
     }
+
+    public static function dispositivo(int $id): ?array
+    {
+        $stmt = Database::connection()->prepare(
+            'SELECT id, artigo_id, tipo, rotulo, texto
+             FROM artigo_dispositivos
+             WHERE id = :id
+             LIMIT 1'
+        );
+        $stmt->execute(['id' => $id]);
+
+        return $stmt->fetch() ?: null;
+    }
+
+    /// Formato de artigo devolvido pela API (chaves em camelCase). Compartilhado
+    /// entre a listagem/busca de artigos e a listagem de favoritos.
+    public static function formatar(array $a): array
+    {
+        return [
+            'id' => (int) $a['id'],
+            'parte' => $a['parte'],
+            'numero' => $a['numero'],
+            'tituloEstrutural' => $a['titulo_estrutural'],
+            'capituloEstrutural' => $a['capitulo_estrutural'],
+            'secaoEstrutural' => $a['secao_estrutural'],
+            'subsecaoEstrutural' => $a['subsecao_estrutural'],
+            'caput' => $a['caput'],
+            'revogado' => (bool) $a['revogado'],
+            'ordem' => (int) $a['ordem'],
+            'leiSlug' => $a['lei_slug'] ?? null,
+            'leiTitulo' => $a['lei_titulo'] ?? null,
+        ];
+    }
 }

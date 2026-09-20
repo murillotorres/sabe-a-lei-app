@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controllers\AuthController;
+use App\Controllers\FavoritoController;
 use App\Controllers\LeisController;
 use App\Core\Env;
 use App\Core\Request;
@@ -16,6 +17,7 @@ $request = new Request();
 $router = new Router();
 $auth = new AuthController();
 $leis = new LeisController();
+$favoritos = new FavoritoController();
 
 $router->post('/auth/register', fn () => $auth->register($request));
 $router->post('/auth/login', fn () => $auth->login($request));
@@ -25,5 +27,9 @@ $router->get('/categorias', fn () => $leis->categorias($request));
 $router->get('/leis', fn () => $leis->leis($request));
 $router->get('/leis/:slug/artigos', fn ($params) => $leis->artigos($request, $params));
 $router->get('/artigos/:id', fn ($params) => $leis->artigo($request, $params));
+
+$router->get('/favoritos', fn () => $favoritos->listar($request));
+$router->post('/favoritos', fn () => $favoritos->criar($request));
+$router->delete('/favoritos/:id', fn ($params) => $favoritos->remover($request, $params));
 
 $router->dispatch(Request::method(), Request::path());

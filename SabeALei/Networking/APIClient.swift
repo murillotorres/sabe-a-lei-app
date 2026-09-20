@@ -14,9 +14,9 @@ struct APIClient {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         self.decoder = decoder
 
-        let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
-        self.encoder = encoder
+        // A API espera e devolve tudo em camelCase (ver Request::input em
+        // FavoritoController, por ex.) — sem conversão, igual ao decoder.
+        self.encoder = JSONEncoder()
     }
 
     func get<Response: Decodable>(
@@ -33,6 +33,13 @@ struct APIClient {
         token: String? = nil
     ) async throws -> Response {
         try await send(path: path, method: "POST", body: body, token: token)
+    }
+
+    func delete<Response: Decodable>(
+        _ path: String,
+        token: String? = nil
+    ) async throws -> Response {
+        try await send(path: path, method: "DELETE", body: Optional<EmptyBody>.none, token: token)
     }
 
     private func send<Body: Encodable, Response: Decodable>(
