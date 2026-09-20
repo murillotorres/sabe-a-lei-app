@@ -3,7 +3,16 @@ import Observation
 @MainActor
 @Observable
 final class AuthStore {
-    private(set) var currentUser: User?
+    private(set) var currentUser: User? {
+        didSet {
+            if let currentUser {
+                UsuarioCache.salvar(currentUser)
+            } else {
+                UsuarioCache.limpar()
+            }
+        }
+    }
+
     private(set) var isLoading = false
     var errorMessage: String?
 
@@ -19,18 +28,28 @@ final class AuthStore {
         }
     }
 
+    /// Restaura a sessão salva. Mostra na hora o que já se sabe localmente
+    /// (funciona sem internet) e só desloga de verdade se o servidor
+    /// responder dizendo que o token não vale mais — um erro de rede não
+    /// deve tirar o usuário logado, só um token efetivamente inválido/expirado.
     func restoreSession() async {
         guard let savedToken = KeychainStore.loadToken() else { return }
+
+        token = savedToken
+        currentUser = UsuarioCache.carregar()
 
         isLoading = true
         defer { isLoading = false }
 
         do {
-            let response = try await AuthService.me(token: savedToken)
-            token = savedToken
-            currentUser = response.user
+            currentUser = try await AuthService.me(token: savedToken).user
+        } catch let error as APIError {
+            if case .server(_, 401) = error {
+                logout()
+            }
         } catch {
-            KeychainStore.deleteToken()
+            // Sem internet, timeout etc. — mantém a sessão com os dados em
+            // cache e tenta atualizar de novo na próxima abertura do app.
         }
     }
 
