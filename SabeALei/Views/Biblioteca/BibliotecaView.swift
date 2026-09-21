@@ -24,6 +24,13 @@ struct BibliotecaView: View {
                 .buttonStyle(.plain)
 
                 NavigationLink {
+                    CodigoPenalView()
+                } label: {
+                    HomeCardView(titulo: "Código Penal", icone: "exclamationmark.shield.fill", cor: .red)
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink {
                     CodigosView()
                 } label: {
                     HomeCardView(titulo: "Códigos", icone: "books.vertical.fill", cor: .orange)

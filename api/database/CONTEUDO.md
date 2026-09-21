@@ -83,10 +83,94 @@ duas diferenças de formato encontradas neste documento:
   rótulo é sintetizado pelo parser, não copiado do HTML; se o Planalto usar outra
   convenção em uma faixa diferente, vale reconferir.
 
+## Código Penal
+
+- **Categoria:** `codigos` (mesma do Código Civil — `INSERT IGNORE`, não recria)
+- **Lei:** `codigo-penal-1940` — Código Penal (Decreto-Lei nº 2.848, de 1940)
+- **Fonte:** https://www.planalto.gov.br/ccivil_03/decreto-lei/del2848compilado.htm
+- **Seed:** `api/database/seed_codigo_penal.sql` (idempotente — apaga e recria `lei_id = 3`,
+  não mexe nas outras leis)
+- **Parser:** `api/database/parse_codigo_penal.py` (Python 3, sem BeautifulSoup — ver abaixo)
+
+Total: **434 artigos** (361 numerados de 1 a 361 + 73 variações com sufixo de letra, ex.
+`121-A`/`121-B`, `359-M-A`/`359-M-B`) e **913 dispositivos**. `parte` é sempre `'permanente'`.
+Hierarquia: Parte (Geral/Especial) → Título → Capítulo → Seção, sem Livro/Subseção — por
+isso `titulo_estrutural` aqui é só `'Parte · Título'` (sem o terceiro nível que o Código
+Civil usa para Livro).
+
+### Por que este parser não usa BeautifulSoup
+
+Este HTML (Decreto-Lei de 1940, com 85 anos de emendas usando ferramentas de autoria
+diferentes) tem tags não fechadas cruzando limites de `<p>` de um jeito que faz **tanto**
+`html.parser` **quanto** `lxml` perderem parágrafos inteiros ao montar a árvore — o texto
+existe em `soup.get_text()` do documento inteiro, mas nenhum `<p>` individual o contém (ex.:
+o Art. 1º e o Art. 184 simplesmente somem). Em vez de tentar consertar a árvore, o parser
+corta o HTML bruto direto nas posições de abertura de `<p ...>` (`re.split` com regex) e
+extrai o texto de cada trecho removendo tags por regex — mais grosseiro, mas não depende de
+reconstruir uma árvore corretamente a partir de uma marcação inconsistente.
+
+### Outras diferenças de formato encontradas
+
+- **Charset real é Windows-1252, não ISO-8859-1**: o gerador (Microsoft FrontPage 6.0)
+  grava bytes como `0x96` (travessão, usado em muitos incisos: "I – texto") que só
+  decodificam certo em `cp1252`; em `iso-8859-1` viram caracteres de controle e quebram o
+  reconhecimento de inciso.
+- **Separador do artigo/parágrafo é traço, não ponto**: "Art. 2º **-** Ninguém..." em vez
+  do "Art. 1º Toda pessoa..." do Código Civil.
+- **Ordinal (º) de vários §§ antigos vem de `<sup>o</sup>`**: um "o" minúsculo real dentro
+  de `<sup>`, não o caractere º — ao virar texto puro sobra um "o" solto (às vezes com
+  espaço extra ao redor, por causa da própria extração). O parser aceita `[ºo°]` com
+  tolerância de espaço.
+- **Ambiguidade traço-sufixo vs. traço-separador**: "Art. 120 **-** A sentença..." (traço
+  separando o número da frase, que por acaso começa com a letra maiúscula "A") é
+  estruturalmente idêntico a "Art. 121**-A**. Matar..." (sufixo de letra de verdade) até
+  você reparar que o sufixo real vem colado no número/ordinal (sem espaço) e o separador,
+  não. O parser só reconhece sufixo de letra quando o traço está imediatamente colado —
+  isso já pegou um falso "Art. 120-A" e um "§ 3º-A" fantasmas nos testes.
+- **Rubricas marginais**: cada crime tem um título curto acima do artigo (ex. "Homicídio
+  simples", "Feminicídio") que não é um cabeçalho estrutural (não é Título/Capítulo/Seção)
+  nem tem marcação HTML consistente (às vezes negrito, às vezes não) — o parser descarta
+  qualquer linha que não bata com nenhum padrão de artigo/parágrafo/inciso/alínea/Pena,
+  mesma política que já se aplicava ao texto descritivo dos cabeçalhos estruturais.
+- **Linha "Pena – ..."**: não é um dispositivo numerado; o parser anexa esse texto ao
+  caput ou ao dispositivo aberto no momento (parágrafo/inciso), em vez de inventar um tipo
+  novo no schema.
+- **Bloco de artigos revogados comprimidos**: Arts. 187 a 196 (revogados em bloco pela Lei
+  de Propriedade Industrial) aparecem com rubrica + "Art. N. (Revogado...)" repetidos dentro
+  de um único `<p>` — o parser detecta múltiplas ocorrências de "Art. N. (Revogado...)" na
+  mesma linha e emite um artigo por ocorrência.
+- **Sufixo de duas letras**: "Art. 359-M-A" e "Art. 359-M-B" (crimes contra o Estado
+  Democrático de Direito, incluídos em 2021) — o grupo de sufixo aceita uma segunda letra
+  opcional.
+
+### Bug de hierarquia encontrado (e corrigido só aqui)
+
+O cálculo de nível de uma alínea, herdado do parser da Constituição/Código Civil
+(`nivel_pai = max(pilha_nivel.keys())`), pendura cada alínea na **alínea anterior** em vez
+do inciso/parágrafo pai, porque depois que a primeira alínea é inserida ela também aparece
+em `pilha_nivel` no nível em que a próxima alínea seria colocada. Numa lista "a) b) c) d)"
+isso gera uma escada (b) filha de a), c) filha de b)...) em vez de irmãs — só não apareceu
+antes porque nenhuma lei processada tinha sequências longas de alíneas. Este parser corrige
+isso rastreando o nível do último parágrafo/inciso aberto (`nivel_container`) e sempre
+pendurando a alínea nele, não no `max(pilha_nivel)`. **Esse bug pode existir também em
+`parse_constituicao.py`/`parse_codigo_civil.py` e nos dados já em produção** — não foi
+verificado nem corrigido lá (fora do escopo desta lei).
+
+### Limitações conhecidas
+
+- Mesma heurística de `revogado` da Constituição/Código Civil (regex no início do texto).
+- Um punhado de provisões `(VETADO)` sem numeração própria (ex. no Título XII, crimes
+  contra o Estado Democrático de Direito) são descartadas — não há como representá-las no
+  schema atual sem inventar um rótulo, e não têm efeito jurídico mesmo.
+- Ao menos um typo real do texto oficial foi encontrado e tolerado no parser: "III perda..."
+  (Art. 129, sem o traço que os incisos vizinhos têm) e "A rt. 107" (espaço espúrio dentro
+  de "Art.").
+
 ## Pendente (ainda não cadastrado)
 
-- **Outros Códigos** (Penal, Processo Civil, Processo Penal, etc.) — a aba "Códigos" no
-  app hoje só teria o Código Civil.
+- **Outros Códigos** (Processo Civil, Processo Penal, etc.) — a aba "Códigos" no app hoje
+  ainda é placeholder (Constituição, Código Civil e Código Penal já têm cards próprios na
+  Biblioteca).
 - **Estatutos** (ECA, Idoso, etc.) — aba "Estatutos" no app ainda é placeholder.
 - Categoria `estatutos` ainda não existe na tabela `categorias`.
 
@@ -95,6 +179,7 @@ duas diferenças de formato encontradas neste documento:
 ```
 mysql -h <host> -u <user> -p < api/database/seed_constituicao.sql
 mysql -h <host> -u <user> -p < api/database/seed_codigo_civil.sql
+mysql -h <host> -u <user> -p < api/database/seed_codigo_penal.sql
 ```
 
 Cada script cria as tabelas com `CREATE TABLE IF NOT EXISTS` e, antes de inserir, apaga
