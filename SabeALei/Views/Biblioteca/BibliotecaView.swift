@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Hub com todas as leis do app — Constituição, Códigos, Estatutos e a
-/// listagem geral. Ponto único de entrada pro conteúdo, no lugar das abas
-/// separadas que existiam antes.
+/// Hub com todas as leis do app — Constituição, Código Civil, Códigos,
+/// Estatutos e a listagem geral. Ponto único de entrada pro conteúdo, no
+/// lugar das abas separadas que existiam antes.
 struct BibliotecaView: View {
     private let colunas = [GridItem(.flexible()), GridItem(.flexible())]
 
@@ -13,6 +13,13 @@ struct BibliotecaView: View {
                     ConstituicaoView()
                 } label: {
                     HomeCardView(titulo: "Constituição", icone: "building.columns.fill", cor: .blue)
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink {
+                    CodigoCivilView()
+                } label: {
+                    HomeCardView(titulo: "Código Civil", icone: "building.2.fill", cor: .indigo)
                 }
                 .buttonStyle(.plain)
 

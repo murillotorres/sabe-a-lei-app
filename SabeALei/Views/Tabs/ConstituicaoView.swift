@@ -1,8 +1,19 @@
 import SwiftUI
 
-private let constituicaoSlug = "constituicao-federal-1988"
-
 struct ConstituicaoView: View {
+    var body: some View {
+        LeiArtigosView(leiSlug: "constituicao-federal-1988", titulo: "Constituição", mostrarSeletorParte: true)
+    }
+}
+
+/// Tela de navegação de uma lei — usada tanto pela Constituição (com o seletor
+/// Texto Permanente/ADCT) quanto pelo Código Civil e outras leis de "parte"
+/// única (sem o seletor, sempre `permanente`).
+struct LeiArtigosView: View {
+    let leiSlug: String
+    let titulo: String
+    var mostrarSeletorParte: Bool = false
+
     @State private var parte: ParteConstitucional = .permanente
     @State private var artigos: [Artigo] = []
     @State private var isLoading = false
@@ -43,17 +54,19 @@ struct ConstituicaoView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Parte", selection: $parte) {
-                ForEach(ParteConstitucional.allCases, id: \.self) { parte in
-                    Text(parte.titulo).tag(parte)
+            if mostrarSeletorParte {
+                Picker("Parte", selection: $parte) {
+                    ForEach(ParteConstitucional.allCases, id: \.self) { parte in
+                        Text(parte.titulo).tag(parte)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .padding()
             }
-            .pickerStyle(.segmented)
-            .padding()
 
             content
         }
-        .navigationTitle("Constituição")
+        .navigationTitle(titulo)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Buscar por número ou texto...")
         .task(id: parte) {
@@ -111,7 +124,7 @@ struct ConstituicaoView: View {
 
         let resultado: [Artigo]
         do {
-            let response = try await LeisService.artigos(leiSlug: constituicaoSlug, parte: parte, busca: searchText)
+            let response = try await LeisService.artigos(leiSlug: leiSlug, parte: parte, busca: searchText)
             resultado = response.artigos
         } catch {
             resultado = []
@@ -130,7 +143,7 @@ struct ConstituicaoView: View {
         defer { isLoading = false }
 
         do {
-            let response = try await LeisService.artigos(leiSlug: constituicaoSlug, parte: parte)
+            let response = try await LeisService.artigos(leiSlug: leiSlug, parte: parte)
             artigos = response.artigos
             loadedParte = parte
         } catch let error as APIError {
