@@ -22,4 +22,11 @@ enum LeisService {
     static func artigo(id: Int) async throws -> ArtigoDetalheResponse {
         try await APIClient.shared.get("/artigos/\(id)")
     }
+
+    /// Busca em todas as leis cadastradas (aba Buscar), não só numa lei específica.
+    static func buscarGlobal(query: String) async throws -> [Artigo] {
+        guard !query.isEmpty else { return [] }
+        let response: BuscaResponse = try await APIClient.shared.get("/busca", query: ["q": query])
+        return response.artigos
+    }
 }

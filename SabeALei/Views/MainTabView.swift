@@ -1,51 +1,34 @@
 import SwiftUI
 
-/// Identifica cada aba, pra permitir pular pra uma delas por código (ex.: o
-/// card "Constituição" na home) sem depender de índices soltos.
-enum AbaPrincipal: Hashable {
-    case principal
-    case constituicao
-    case codigos
-    case estatutos
-    case todasAsLeis
-}
-
 struct MainTabView: View {
     @Environment(AuthStore.self) private var authStore
     @Environment(FavoritosStore.self) private var favoritosStore
-    @State private var abaSelecionada: AbaPrincipal = .principal
 
     var body: some View {
-        TabView(selection: $abaSelecionada) {
-            PrincipalView(abaSelecionada: $abaSelecionada)
+        TabView {
+            PrincipalView()
                 .tabItem {
                     Label("Principal", systemImage: "house.fill")
                 }
-                .tag(AbaPrincipal.principal)
 
-            ConstituicaoView()
-                .tabItem {
-                    Label("Constituição", systemImage: "building.columns.fill")
-                }
-                .tag(AbaPrincipal.constituicao)
+            // BibliotecaView não tem NavigationStack próprio (também é empilhada
+            // a partir do card na Principal), então precisa de um aqui como raiz da aba.
+            NavigationStack {
+                BibliotecaView()
+            }
+            .tabItem {
+                Label("Biblioteca", systemImage: "books.vertical.fill")
+            }
 
-            CodigosView()
+            BuscarView()
                 .tabItem {
-                    Label("Códigos", systemImage: "books.vertical.fill")
+                    Label("Buscar", systemImage: "magnifyingglass")
                 }
-                .tag(AbaPrincipal.codigos)
 
-            EstatutosView()
+            PerfilView()
                 .tabItem {
-                    Label("Estatutos", systemImage: "doc.text.fill")
+                    Label("Perfil", systemImage: "person.crop.circle.fill")
                 }
-                .tag(AbaPrincipal.estatutos)
-
-            TodasLeisView()
-                .tabItem {
-                    Label("Todas as Leis", systemImage: "list.bullet.rectangle.portrait.fill")
-                }
-                .tag(AbaPrincipal.todasAsLeis)
         }
         .task(id: authStore.currentUser?.id) {
             if let token = authStore.token {

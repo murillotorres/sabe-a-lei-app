@@ -78,6 +78,12 @@ struct ArtigosResponse: Decodable {
     let artigos: [Artigo]
 }
 
+/// Resposta da busca global (/busca) — ao contrário de `ArtigosResponse`, não
+/// fica restrita a uma lei/parte específica, então não traz esses campos.
+struct BuscaResponse: Decodable {
+    let artigos: [Artigo]
+}
+
 struct ArtigoDetalheResponse: Decodable {
     let artigo: Artigo
     let dispositivos: [ArtigoDispositivo]

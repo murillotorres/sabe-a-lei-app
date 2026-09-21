@@ -1,10 +1,6 @@
 import SwiftUI
 
 struct PrincipalView: View {
-    @Environment(AuthStore.self) private var authStore
-    @Binding var abaSelecionada: AbaPrincipal
-    @State private var isPresentingAuth = false
-
     private let colunas = [GridItem(.flexible()), GridItem(.flexible())]
 
     var body: some View {
@@ -20,25 +16,20 @@ struct PrincipalView: View {
                         Text("Vade mecum digital")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-
-                        accountSection
                     }
 
                     LazyVGrid(columns: colunas, spacing: 12) {
-                        // Pula pra aba Constituição em vez de empilhar a tela aqui:
-                        // ConstituicaoView já tem seu próprio NavigationStack, e o
-                        // SwiftUI não suporta aninhar um NavigationStack dentro do outro.
-                        Button {
-                            abaSelecionada = .constituicao
+                        NavigationLink {
+                            ConstituicaoView()
                         } label: {
                             HomeCardView(titulo: "Constituição", icone: "building.columns.fill", cor: .blue)
                         }
                         .buttonStyle(.plain)
 
                         NavigationLink {
-                            FavoritosView()
+                            BibliotecaView()
                         } label: {
-                            HomeCardView(titulo: "Favoritos", icone: "star.fill", cor: .yellow)
+                            HomeCardView(titulo: "Biblioteca", icone: "books.vertical.fill", cor: .indigo)
                         }
                         .buttonStyle(.plain)
                     }
@@ -48,45 +39,13 @@ struct PrincipalView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Principal")
-            .sheet(isPresented: $isPresentingAuth) {
-                AuthView()
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var accountSection: some View {
-        if let user = authStore.currentUser {
-            VStack(spacing: 8) {
-                Text("Olá, \(user.name)!")
-                    .font(.headline)
-                Button("Sair", role: .destructive) {
-                    authStore.logout()
-                }
-            }
-        } else {
-            VStack(spacing: 12) {
-                Text("Entre para acessar áreas exclusivas do app.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-
-                Button {
-                    isPresentingAuth = true
-                } label: {
-                    Label("Entrar ou criar conta", systemImage: "person.crop.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-            }
-            .padding(.horizontal)
         }
     }
 }
 
-/// Atalho da home em formato de card — ícone + título, mesmo estilo pros
-/// vários destinos (Constituição, Favoritos, e o que mais entrar depois).
-private struct HomeCardView: View {
+/// Atalho em formato de card — ícone + título, mesmo estilo em toda tela que
+/// funcione como um hub de navegação (Principal, Biblioteca...).
+struct HomeCardView: View {
     let titulo: String
     let icone: String
     var cor: Color = .accentColor
@@ -107,7 +66,7 @@ private struct HomeCardView: View {
 }
 
 #Preview {
-    PrincipalView(abaSelecionada: .constant(.principal))
+    PrincipalView()
         .environment(AuthStore())
         .environment(FavoritosStore())
 }

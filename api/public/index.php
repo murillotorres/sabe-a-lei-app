@@ -27,6 +27,7 @@ $router->get('/categorias', fn () => $leis->categorias($request));
 $router->get('/leis', fn () => $leis->leis($request));
 $router->get('/leis/:slug/artigos', fn ($params) => $leis->artigos($request, $params));
 $router->get('/artigos/:id', fn ($params) => $leis->artigo($request, $params));
+$router->get('/busca', fn () => $leis->buscar($request));
 
 $router->get('/favoritos', fn () => $favoritos->listar($request));
 $router->post('/favoritos', fn () => $favoritos->criar($request));

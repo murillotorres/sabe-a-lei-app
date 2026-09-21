@@ -9,11 +9,9 @@ struct ConstituicaoView: View {
     @State private var errorMessage: String?
     @State private var loadedParte: ParteConstitucional?
 
-    @State private var isSearching = false
     @State private var searchText = ""
     @State private var searchResults: [Artigo] = []
     @State private var isSearchingRemote = false
-    @FocusState private var searchFieldFocused: Bool
 
     private var displayedArtigos: [Artigo] {
         guard !searchText.isEmpty else { return artigos }
@@ -44,79 +42,26 @@ struct ConstituicaoView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                header
-
-                Picker("Parte", selection: $parte) {
-                    ForEach(ParteConstitucional.allCases, id: \.self) { parte in
-                        Text(parte.titulo).tag(parte)
-                    }
+        VStack(spacing: 0) {
+            Picker("Parte", selection: $parte) {
+                ForEach(ParteConstitucional.allCases, id: \.self) { parte in
+                    Text(parte.titulo).tag(parte)
                 }
-                .pickerStyle(.segmented)
-                .padding()
+            }
+            .pickerStyle(.segmented)
+            .padding()
 
-                content
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
-            .task(id: parte) {
-                await load()
-            }
-            .task(id: "\(parte.rawValue)|\(searchText)") {
-                await search()
-            }
+            content
         }
-    }
-
-    @ViewBuilder
-    private var header: some View {
-        HStack(spacing: 12) {
-            if isSearching {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("Buscar por número ou texto...", text: $searchText)
-                        .focused($searchFieldFocused)
-                        .submitLabel(.search)
-                        .autocorrectionDisabled()
-                    if !searchText.isEmpty {
-                        Button {
-                            searchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .padding(8)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
-
-                Button("Cancelar") {
-                    withAnimation {
-                        isSearching = false
-                        searchFieldFocused = false
-                    }
-                    searchText = ""
-                }
-            } else {
-                Text("Constituição")
-                    .font(.largeTitle.bold())
-                Spacer()
-                Button {
-                    withAnimation {
-                        isSearching = true
-                    }
-                    searchFieldFocused = true
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.title2)
-                }
-            }
+        .navigationTitle("Constituição")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: "Buscar por número ou texto...")
+        .task(id: parte) {
+            await load()
         }
-        .padding(.horizontal)
-        .padding(.top, 8)
-        .animation(.default, value: isSearching)
+        .task(id: "\(parte.rawValue)|\(searchText)") {
+            await search()
+        }
     }
 
     @ViewBuilder
@@ -270,6 +215,9 @@ struct ArtigoListView: View {
 
 struct ArtigoCardView: View {
     let artigo: Artigo
+    /// Mostra o título da lei acima do caput — usado na busca global (aba
+    /// Buscar), onde os resultados podem vir de leis diferentes.
+    var mostrarLei: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -286,6 +234,11 @@ struct ArtigoCardView: View {
                         .foregroundStyle(.red)
                 }
                 Spacer()
+            }
+            if mostrarLei, let leiTitulo = artigo.leiTitulo {
+                Text(leiTitulo)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Text(artigo.caput)
                 .font(.subheadline)
@@ -339,7 +292,9 @@ struct TrechoCorrespondenteView: View {
 }
 
 #Preview {
-    ConstituicaoView()
-        .environment(AuthStore())
-        .environment(FavoritosStore())
+    NavigationStack {
+        ConstituicaoView()
+    }
+    .environment(AuthStore())
+    .environment(FavoritosStore())
 }

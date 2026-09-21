@@ -22,10 +22,27 @@ final class Artigo
         return $stmt->fetchAll();
     }
 
-    /// Busca por palavras soltas, olhando não só o caput como os dispositivos
-    /// (parágrafos/incisos/alíneas) do artigo. Ordena por "compatibilidade":
-    /// quanto mais palavras da busca o artigo contém, mais relevante ele é;
-    /// entre artigos igualmente relevantes, prevalece a ordem original da lei.
+    /// Todos os artigos de todas as leis cadastradas, com o slug/título da lei
+    /// já incluídos — usado pela busca global (aba Buscar), que não fica
+    /// restrita a uma lei/parte específica como a busca dentro da Constituição.
+    public static function listAll(): array
+    {
+        $stmt = Database::connection()->prepare(
+            'SELECT a.id, a.parte, a.numero, a.titulo_estrutural, a.capitulo_estrutural,
+                    a.secao_estrutural, a.subsecao_estrutural, a.caput, a.revogado, a.ordem,
+                    leis.slug AS lei_slug, leis.titulo AS lei_titulo
+             FROM artigos a
+             INNER JOIN leis ON leis.id = a.lei_id
+             ORDER BY leis.id, a.parte, a.ordem'
+        );
+        $stmt->execute();
+
+        return $stmt->fetchAll();
+    }
+
+    /// Busca por palavras soltas dentro de uma lei/parte específica (ex.: só o
+    /// texto permanente da Constituição). Ver `pontuarEOrdenar` pro critério
+    /// de relevância.
     public static function search(int $leiId, string $parte, string $query): array
     {
         $tokens = self::tokenizar($query);
@@ -33,7 +50,26 @@ final class Artigo
             return [];
         }
 
-        $artigos = self::listByLei($leiId, $parte);
+        return self::pontuarEOrdenar(self::listByLei($leiId, $parte), $tokens);
+    }
+
+    /// Mesma busca, mas em todas as leis cadastradas — usada pela aba Buscar.
+    public static function searchGlobal(string $query): array
+    {
+        $tokens = self::tokenizar($query);
+        if ($tokens === []) {
+            return [];
+        }
+
+        return self::pontuarEOrdenar(self::listAll(), $tokens);
+    }
+
+    /// Pontua cada artigo pela compatibilidade com as palavras buscadas e
+    /// ordena por relevância: quanto mais palavras da busca o artigo contém,
+    /// mais relevante ele é; entre artigos igualmente relevantes, prevalece a
+    /// ordem original da lei (e, na busca global, a ordem das leis entre si).
+    private static function pontuarEOrdenar(array $artigos, array $tokens): array
+    {
         if ($artigos === []) {
             return [];
         }

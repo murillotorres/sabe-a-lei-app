@@ -60,6 +60,19 @@ final class LeisController
         ]);
     }
 
+    /// Busca em todas as leis cadastradas (aba Buscar) — ao contrário de
+    /// `artigos()`, não fica restrita a uma lei/parte específica.
+    public function buscar(Request $request): void
+    {
+        $busca = trim((string) $request->query('q', ''));
+
+        $artigos = $busca === ''
+            ? []
+            : array_map(fn (array $a) => $this->formatArtigo($a), Artigo::searchGlobal($busca));
+
+        Response::json(['artigos' => $artigos]);
+    }
+
     public function artigo(Request $request, array $params): void
     {
         $id = (int) ($params['id'] ?? 0);
