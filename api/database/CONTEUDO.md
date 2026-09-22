@@ -209,6 +209,55 @@ Título → Capítulo → Seção → Subseção, com `titulo_estrutural` = `'Pa
   não é um bug do parser, é assim que o Planalto publica; ver `parse_stats_cpc.txt` (não
   versionado) para os totais exatos de uma reexecução.
 
+## Descrição de cabeçalho e rubrica de artigo
+
+Duas colunas novas em `artigos`, adicionadas depois das quatro leis acima já estarem no ar
+(reprocessadas nesta mesma leva — ver "Como reaplicar" pra saber o que isso exigiu):
+
+- **`descricao_estrutural`**: o texto por extenso do cabeçalho estrutural mais específico em
+  vigor — os campos `titulo_estrutural`/`capitulo_estrutural`/etc. só guardam o rótulo
+  ("Título II"), nunca vinham com a descrição ("Do Crime"). Sempre a do nível mais profundo
+  ativo (ex.: se o artigo está em Título II → Capítulo I, é a descrição do Capítulo, não a
+  do Título). Sentence-case (só a primeira letra maiúscula) mesmo quando a fonte vem em
+  CAIXA ALTA, via `normalizar_descricao()`.
+- **`rubrica`**: a epígrafe/nome do próprio artigo (ex. "Relação de causalidade" antes do
+  Art. 13 do Código Penal). Só o Código Penal usa essa convenção nos quatro parsers atuais —
+  Constituição (não reprocessada, ver "Pendente"), Código Civil e CPC sempre gravam `NULL`
+  aqui, confirmado rodando os parsers e checando a contagem.
+
+Cada parser reconhece isso de duas formas, dependendo de como o HTML separa rótulo de
+descrição:
+- **Mesma linha** ("TÍTULO II DO CRIME" ou "CAPÍTULO I Da Personalidade e da Capacidade"):
+  o texto depois do rótulo casado pela regex, limpo de citações finais
+  (`limpar_citacoes()`).
+- **Linha seguinte** (ex. "SUBTÍTULO I" sozinho, com "Da Sociedade Não Personificada" como
+  o próximo `<p>` centralizado): um estado `pendente_nivel` guarda qual nível está esperando
+  a descrição, resolvido no próximo `<p>` centralizado que não for ele mesmo um cabeçalho
+  novo. Os dois formatos coexistem no mesmo documento (Código Civil e Código Penal mudam de
+  convenção no meio do texto, entre trechos escritos em épocas diferentes).
+
+Rubrica usa uma heurística mais simples: qualquer linha não reconhecida vira candidata
+(`rubrica_pendente`), consumida pelo próximo "Art." novo ou descartada se o que vier a
+seguir for outra coisa (parágrafo/inciso/alínea/cabeçalho) — assim uma rubrica nunca vaza
+pra um artigo sem relação com ela.
+
+### Achados nesta reexecução (fora da feature em si)
+
+Reprocessar Código Civil e CPC pra adicionar as colunas acima expôs problemas que já
+existiam nos dados publicados, não relacionados à feature nova:
+
+- **Código Civil decodificava como ISO-8859-1, devia ser Windows-1252** — mesmo problema já
+  documentado no Código Penal (travessão em incisos vira caractere de controle). Corrigido
+  aqui também; o Código Civil ganhou **23 dispositivos** que antes ficavam grudados no
+  dispositivo anterior por causa disso (1.751 → 1.774).
+- **Bug de alínea-vira-neta-da-anterior** (documentado na seção do Código Penal) também
+  existia no parser do Código Civil — corrigido na mesma leva.
+- **Nível de cabeçalho novo**: o Código Civil usa "SUBTÍTULO I/II..." entre Título e
+  Capítulo em alguns Livros (ex. Livro II da Parte Especial, "Do Direito de Empresa") — não
+  reconhecido antes, essas linhas viravam continuação de texto de um dispositivo qualquer
+  por engano. Agora é um nível reconhecido, dobrado dentro de `titulo_estrutural` (não tem
+  coluna própria — ver "Estrutura do schema").
+
 ## Pendente (ainda não cadastrado)
 
 - **Outros Códigos** (Processo Penal, Tributário Nacional, etc.) e **Estatutos** (ECA,
@@ -216,6 +265,14 @@ Título → Capítulo → Seção → Subseção, com `titulo_estrutural` = `'Pa
   "Todas as Leis" foram removidos da grade a pedido; as telas placeholder ainda existem em
   `SabeALei/Views/Tabs/` mas não são mais navegáveis).
 - Categoria `estatutos` ainda não existe na tabela `categorias`.
+- **Constituição não tem `descricao_estrutural`/`rubrica` preenchidos** (ficam `NULL` em
+  todas as suas 412 linhas) — o parser original (`parse_constituicao.py`) não está neste
+  repositório nem versionado em lugar nenhum encontrado, então a Constituição não foi
+  reprocessada junto com as outras três leis quando essas colunas foram adicionadas. Pra
+  fazer isso, seria preciso escrever um parser novo do zero a partir do HTML da fonte
+  (link na seção acima) — o app já trata os dois campos como opcionais, então isso só
+  significa que a Constituição não mostra a descrição do cabeçalho nem rubrica na lista/
+  detalhe por enquanto, sem quebrar nada.
 
 ## Como reaplicar / atualizar
 
@@ -235,12 +292,28 @@ estado do banco no momento em que foram gerados (ver `ARTIGO_ID_INICIAL` etc. no
 `parse_codigo_civil.py`), então confira que o banco alvo bate com esses números antes de
 reaplicar num ambiente com mais leis do que quando o script foi escrito.
 
+**Cuidado ao reprocessar uma lei que já tem outras depois dela na cadeia de IDs**: se o
+número de dispositivos gerados mudar (por qualquer motivo — um bug corrigido, um encoding
+consertado), o `DISPOSITIVO_ID_INICIAL` calculado pra próxima lei fica desatualizado e as
+faixas colidem (`Duplicate entry ... for key 'artigo_dispositivos.PRIMARY'`). Foi o que
+aconteceu ao consertar o encoding do Código Civil (ganhou 23 dispositivos, ver seção
+acima): o Código Penal e o CPC tiveram seus `DISPOSITIVO_ID_INICIAL` recalculados em
+cascata (4671→4694, 5584→5607) e os três scripts precisaram ser reaplicados **nessa
+ordem, num banco onde as três leis foram apagadas primeiro** (não dá pra simplesmente
+"rodar de novo" cada um isoladamente quando isso acontece, porque o de baixo vai encontrar
+as linhas antigas do de cima ainda ocupando os ids que ele quer usar). Antes de reaplicar
+depois de mexer num parser no meio da cadeia, confira os totais de "Artigos"/"Dispositivos"
+que cada script imprime no stderr contra os comentários `ARTIGO_ID_INICIAL`/
+`DISPOSITIVO_ID_INICIAL` dos scripts seguintes.
+
 ## Estrutura do schema (resumo)
 
 - `categorias` — slug + nome (ex.: `constituicao-federal`).
 - `leis` — pertence a uma categoria; slug + título + fonte.
 - `artigos` — um card da listagem: número, `parte` (`permanente`/`adct`), hierarquia
-  (título/capítulo/seção/subseção como texto), caput, `revogado`, `ordem`.
+  (título/capítulo/seção/subseção como texto), `descricao_estrutural` (texto do cabeçalho
+  mais específico, ex. "Do crime"), `rubrica` (epígrafe do artigo, ex. "Relação de
+  causalidade" — só o Código Penal usa), caput, `revogado`, `ordem`.
 - `artigo_dispositivos` — um card da tela de detalhe: `tipo`
   (`paragrafo`/`inciso`/`alinea`/`item`), `rotulo` (ex. `§ 1º`, `I`, `a)`), `texto`,
   `nivel` (profundidade), `parent_id` (auto-relacionamento — alínea aponta pro inciso

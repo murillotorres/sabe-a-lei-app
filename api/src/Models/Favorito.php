@@ -18,7 +18,8 @@ final class Favorito
     // como o id do artigo.
     private const SELECT_BASE = 'SELECT f.id AS favorito_id, f.dispositivo_id,
             a.id, a.parte, a.numero, a.titulo_estrutural, a.capitulo_estrutural,
-            a.secao_estrutural, a.subsecao_estrutural, a.caput, a.revogado, a.ordem,
+            a.secao_estrutural, a.subsecao_estrutural, a.descricao_estrutural, a.rubrica,
+            a.caput, a.revogado, a.ordem,
             leis.slug AS lei_slug, leis.titulo AS lei_titulo,
             d.id AS d_id, d.tipo AS d_tipo, d.rotulo AS d_rotulo, d.texto AS d_texto
         FROM favoritos f

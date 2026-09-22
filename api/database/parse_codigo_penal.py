@@ -17,7 +17,10 @@ ENTRADA = "codigo_penal_raw.html"
 LEI_ID = 3
 CATEGORIA_ID = 2  # "codigos", já existe (criada para o Código Civil)
 ARTIGO_ID_INICIAL = 2505        # max(artigos.id) atual (2504) + 1
-DISPOSITIVO_ID_INICIAL = 4671   # max(artigo_dispositivos.id) atual (4670) + 1
+# O Código Civil foi reprocessado depois (fix de encoding cp1252) e passou de
+# 1.751 pra 1.774 dispositivos, então o próximo id livre subiu de 4671 pra
+# 4694 — ver CONTEUDO.md sobre a convenção de ids fixos por lei.
+DISPOSITIVO_ID_INICIAL = 4694
 
 # "Art" às vezes aparece com espaço espúrio ("A rt. 107") — resíduo de OCR/cópia
 # do próprio site do Planalto. O sufixo de letra (121-A) e o ordinal (1º/2º) às
@@ -82,12 +85,37 @@ def formatar_heading(texto):
     return f"{rotulo} {numeral}"
 
 
+def limpar_citacoes(texto: str) -> str:
+    """Remove parênteses finais em cadeia, tipo "(Incluído pela Lei nº X)
+    (Vigência)" — sobra só o texto descritivo, se houver. Tolera um ponto
+    final depois do parêntese (typo real do texto oficial em pelo menos um
+    caso) e um "Vigência" solto sem parênteses no fim (idem)."""
+    anterior = None
+    while anterior != texto:
+        anterior = texto
+        texto = re.sub(r"\s*\([^()]*\)\.?\s*$", "", texto).strip()
+        texto = re.sub(r"\s+Vig[eê]ncia\s*$", "", texto, flags=re.I).strip()
+    return texto
+
+
+def normalizar_descricao(texto):
+    """"DO CRIME" (caixa alta, como vem do centralizado) -> "Do crime"."""
+    if not texto:
+        return None
+    return texto[0].upper() + texto[1:].lower()
+
+
 class Artigo:
-    def __init__(self, numero, contexto):
+    def __init__(self, numero, contexto, descricao=None, rubrica=None):
         self.numero = numero
         self.caput = ""
         self.revogado = False
         self.contexto = contexto  # (parte, titulo, capitulo, secao)
+        # Descrição do cabeçalho estrutural mais específico em vigor (ex.:
+        # "Do crime") e rubrica/epígrafe do próprio artigo (ex.: "Relação de
+        # causalidade") — ambos None quando a lei não usa a convenção.
+        self.descricao = descricao
+        self.rubrica = rubrica
         self.dispositivos = []
 
 
@@ -150,6 +178,17 @@ def main():
             break
 
     parte_atual = titulo_atual = capitulo_atual = secao_atual = None
+    descricao_parte = descricao_titulo = descricao_capitulo = descricao_secao = None
+    # Quando um cabeçalho centralizado não tem descrição colada na mesma linha
+    # (ex.: "CAPÍTULO I-A (Incluído...)"), ela pode vir como a PRÓXIMA linha
+    # centralizada sozinha ("DA EXPOSIÇÃO DA INTIMIDADE SEXUAL") — esta
+    # variável guarda qual nível está esperando essa segunda linha.
+    pendente_nivel = None
+    # Última linha não reconhecida antes de um "Art." novo — vira a rubrica
+    # desse artigo (ex.: "Relação de causalidade" antes do Art. 13). Zerada
+    # sempre que qualquer outra coisa é processada, pra não vazar pra um
+    # artigo mais adiante sem relação nenhuma com ela.
+    rubrica_pendente = None
     artigos: list[Artigo] = []
     artigo_atual = None
     pilha_nivel: dict[int, int] = {}
@@ -161,8 +200,11 @@ def main():
     # porque nenhuma lei processada tinha sequências longas de alíneas).
     nivel_container = 0
 
+    def descricao_atual():
+        return descricao_secao or descricao_capitulo or descricao_titulo or descricao_parte
+
     def processar_linha(texto):
-        nonlocal artigo_atual, pilha_nivel, nivel_container
+        nonlocal artigo_atual, pilha_nivel, nivel_container, rubrica_pendente
 
         m = RE_ARTIGO.match(texto)
         if m:
@@ -170,7 +212,11 @@ def main():
             if m.group(2):
                 numero += m.group(2)  # já vem com o traço (grupo é "-[A-Z]...")
             resto = m.group(3).strip()
-            artigo_atual = Artigo(numero, (parte_atual, titulo_atual, capitulo_atual, secao_atual))
+            artigo_atual = Artigo(
+                numero, (parte_atual, titulo_atual, capitulo_atual, secao_atual),
+                descricao=descricao_atual(), rubrica=rubrica_pendente,
+            )
+            rubrica_pendente = None
             artigo_atual.caput = resto
             if RE_REVOGADO_INICIO.match(resto):
                 artigo_atual.revogado = True
@@ -180,12 +226,14 @@ def main():
             return
 
         if artigo_atual is None:
-            return  # rubrica/nota antes do primeiro artigo — descarta
+            rubrica_pendente = None
+            return  # nota antes do primeiro artigo — descarta
 
         m = RE_PARAGRAFO_UNICO.match(texto)
         if m:
             adicionar_dispositivo(artigo_atual, pilha_nivel, "paragrafo", "Parágrafo único", m.group(1).strip(), nivel=1)
             nivel_container = 1
+            rubrica_pendente = None
             return
 
         m = RE_PARAGRAFO.match(texto)
@@ -195,6 +243,7 @@ def main():
             rotulo = f"§ {numero_paragrafo}º{sufixo}" if numero_paragrafo < 10 else f"§ {numero_paragrafo}{sufixo}"
             adicionar_dispositivo(artigo_atual, pilha_nivel, "paragrafo", rotulo, m.group(3).strip(), nivel=1)
             nivel_container = 1
+            rubrica_pendente = None
             return
 
         m = RE_INCISO.match(texto)
@@ -202,11 +251,13 @@ def main():
             nivel = 2 if (1 in pilha_nivel and artigo_atual.dispositivos[pilha_nivel[1]]["tipo"] == "paragrafo") else 1
             adicionar_dispositivo(artigo_atual, pilha_nivel, "inciso", m.group(1), m.group(2).strip(), nivel=nivel)
             nivel_container = nivel
+            rubrica_pendente = None
             return
 
         m = RE_ALINEA.match(texto)
         if m:
             adicionar_dispositivo(artigo_atual, pilha_nivel, "alinea", f"{m.group(1)})", m.group(2).strip(), nivel=nivel_container + 1)
+            rubrica_pendente = None
             return
 
         if texto.lower().startswith("pena"):
@@ -219,12 +270,16 @@ def main():
                 disp["texto"] = (disp["texto"] + " " + texto).strip()
             else:
                 artigo_atual.caput = (artigo_atual.caput + " " + texto).strip()
+            rubrica_pendente = None
             return
 
         # Não bate com nenhum padrão conhecido: no restante do documento (ver
-        # levantamento em CONTEUDO.md) isso é sempre rubrica marginal ("nome
-        # do crime", ex. "Homicídio simples") ou nota de rodapé — nunca uma
-        # continuação real de frase entre <p>s. Descarta.
+        # levantamento em CONTEUDO.md) isso é quase sempre rubrica marginal
+        # ("nome do crime", ex. "Homicídio simples") ou nota de rodapé — nunca
+        # uma continuação real de frase entre <p>s. Guarda como candidata a
+        # rubrica do PRÓXIMO "Art." (se não for seguida de um, é descartada
+        # pelos "rubrica_pendente = None" nos outros ramos acima).
+        rubrica_pendente = limpar_citacoes(texto) or None
 
     for i in range(inicio + 1, fim):
         align, texto = paragrafos[i]
@@ -232,10 +287,29 @@ def main():
             continue
 
         if align == "CENTER":
+            # Uma linha centralizada pendente de descrição (ver mais abaixo)
+            # se resolve aqui, desde que esta linha não seja ela mesma um
+            # cabeçalho novo — senão a "descrição" pendente fica None mesmo.
+            if pendente_nivel is not None:
+                nivel_pendente, pendente_nivel = pendente_nivel, None
+                if not RE_HEADING_PARTE.match(texto) and not formatar_heading(texto):
+                    desc = normalizar_descricao(limpar_citacoes(texto))
+                    if nivel_pendente == "parte":
+                        descricao_parte = desc
+                    elif nivel_pendente == "titulo":
+                        descricao_titulo = desc
+                    elif nivel_pendente == "capitulo":
+                        descricao_capitulo = desc
+                    elif nivel_pendente == "secao":
+                        descricao_secao = desc
+                    continue
+
             m_parte = RE_HEADING_PARTE.match(texto)
             if m_parte:
                 parte_atual = f"Parte {m_parte.group(1).capitalize()}"
                 titulo_atual = capitulo_atual = secao_atual = None
+                descricao_parte = descricao_titulo = descricao_capitulo = descricao_secao = None
+                rubrica_pendente = None
                 # Único caso do documento em que "PARTE ... TÍTULO ..." vêm
                 # colados num <p> só (o cabeçalho de abertura) — o resto do
                 # texto após "PARTE GERAL" ainda pode conter o Título.
@@ -243,18 +317,45 @@ def main():
                 heading2 = formatar_heading(resto)
                 if heading2 and heading2.startswith("Título"):
                     titulo_atual = heading2
+                    m_h2 = RE_HEADING_GENERICO.match(resto)
+                    desc2 = limpar_citacoes(resto[m_h2.end():].strip())
+                    if desc2:
+                        descricao_titulo = normalizar_descricao(desc2)
+                    else:
+                        pendente_nivel = "titulo"
+                else:
+                    resto_limpo = limpar_citacoes(resto)
+                    if resto_limpo:
+                        descricao_parte = normalizar_descricao(resto_limpo)
+                    else:
+                        pendente_nivel = "parte"
                 continue
 
             heading = formatar_heading(texto)
             if heading:
+                m_h = RE_HEADING_GENERICO.match(texto)
+                resto_limpo = limpar_citacoes(texto[m_h.end():].strip())
+                desc = normalizar_descricao(resto_limpo) if resto_limpo else None
+                rubrica_pendente = None
                 if heading.startswith("Título"):
                     titulo_atual = heading
                     capitulo_atual = secao_atual = None
+                    descricao_titulo = desc
+                    descricao_capitulo = descricao_secao = None
+                    if desc is None:
+                        pendente_nivel = "titulo"
                 elif heading.startswith("Capítulo"):
                     capitulo_atual = heading
                     secao_atual = None
+                    descricao_capitulo = desc
+                    descricao_secao = None
+                    if desc is None:
+                        pendente_nivel = "capitulo"
                 elif heading.startswith("Seção"):
                     secao_atual = heading
+                    descricao_secao = desc
+                    if desc is None:
+                        pendente_nivel = "secao"
                 continue
             continue  # cabeçalho não reconhecido (ex. "DISPOSIÇÕES FINAIS") — ignora
 
@@ -264,11 +365,15 @@ def main():
         revogados_em_bloco = RE_MULTI_REVOGADO.findall(texto)
         if len(revogados_em_bloco) >= 1:
             for numero, revtxt in revogados_em_bloco:
-                artigo_atual = Artigo(numero, (parte_atual, titulo_atual, capitulo_atual, secao_atual))
+                artigo_atual = Artigo(
+                    numero, (parte_atual, titulo_atual, capitulo_atual, secao_atual),
+                    descricao=descricao_atual(),
+                )
                 artigo_atual.caput = revtxt
                 artigo_atual.revogado = True
                 artigos.append(artigo_atual)
             pilha_nivel = {}
+            rubrica_pendente = None
             continue
 
         processar_linha(texto)
@@ -326,6 +431,7 @@ def emitir_sql(artigos: list):
             "(" + ", ".join([
                 str(artigo_id), str(LEI_ID), sql_str("permanente"), sql_str(artigo.numero),
                 sql_str(titulo_estrutural), sql_str(capitulo), sql_str(secao), "NULL",
+                sql_str(artigo.descricao), sql_str(artigo.rubrica),
                 sql_str(artigo.caput), "1" if artigo.revogado else "0", str(ordem_artigo),
             ]) + ")"
         )
@@ -350,7 +456,7 @@ def emitir_sql(artigos: list):
 
     out.write(
         "INSERT INTO artigos (id, lei_id, parte, numero, titulo_estrutural, capitulo_estrutural, "
-        "secao_estrutural, subsecao_estrutural, caput, revogado, ordem) VALUES\n"
+        "secao_estrutural, subsecao_estrutural, descricao_estrutural, rubrica, caput, revogado, ordem) VALUES\n"
     )
     out.write(",\n".join(artigo_rows) + ";\n\n")
 

@@ -164,13 +164,13 @@ struct ArtigoListView: View {
     /// `NavigationLink`, que sempre desenha a setinha de disclosure na List.
     @State private var artigoIdSelecionado: Int?
 
-    private var grupos: [(titulo: String?, artigos: [Artigo])] {
-        var result: [(titulo: String?, artigos: [Artigo])] = []
+    private var grupos: [(titulo: String?, descricao: String?, artigos: [Artigo])] {
+        var result: [(titulo: String?, descricao: String?, artigos: [Artigo])] = []
         for artigo in artigos {
             if !result.isEmpty && result[result.count - 1].titulo == artigo.grupoEstrutural {
                 result[result.count - 1].artigos.append(artigo)
             } else {
-                result.append((artigo.grupoEstrutural, [artigo]))
+                result.append((artigo.grupoEstrutural, artigo.descricaoEstrutural, [artigo]))
             }
         }
         return result
@@ -205,7 +205,16 @@ struct ArtigoListView: View {
                     }
                 } header: {
                     if let titulo = grupo.titulo {
-                        Text(titulo)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(titulo)
+                            if let descricao = grupo.descricao {
+                                Text(descricao)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .textCase(nil)
+                            }
+                        }
+                        .padding(.bottom, 2)
                     }
                 }
             }
@@ -247,6 +256,11 @@ struct ArtigoCardView: View {
                         .foregroundStyle(.red)
                 }
                 Spacer()
+            }
+            if let rubrica = artigo.rubrica {
+                Text(rubrica)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
             }
             if mostrarLei, let leiTitulo = artigo.leiTitulo {
                 Text(leiTitulo)

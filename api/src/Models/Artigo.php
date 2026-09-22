@@ -12,7 +12,8 @@ final class Artigo
     {
         $stmt = Database::connection()->prepare(
             'SELECT id, parte, numero, titulo_estrutural, capitulo_estrutural,
-                    secao_estrutural, subsecao_estrutural, caput, revogado, ordem
+                    secao_estrutural, subsecao_estrutural, descricao_estrutural,
+                    rubrica, caput, revogado, ordem
              FROM artigos
              WHERE lei_id = :lei_id AND parte = :parte
              ORDER BY ordem'
@@ -29,7 +30,8 @@ final class Artigo
     {
         $stmt = Database::connection()->prepare(
             'SELECT a.id, a.parte, a.numero, a.titulo_estrutural, a.capitulo_estrutural,
-                    a.secao_estrutural, a.subsecao_estrutural, a.caput, a.revogado, a.ordem,
+                    a.secao_estrutural, a.subsecao_estrutural, a.descricao_estrutural,
+                    a.rubrica, a.caput, a.revogado, a.ordem,
                     leis.slug AS lei_slug, leis.titulo AS lei_titulo
              FROM artigos a
              INNER JOIN leis ON leis.id = a.lei_id
@@ -260,6 +262,7 @@ final class Artigo
             'SELECT artigos.id, artigos.lei_id, artigos.parte, artigos.numero,
                     artigos.titulo_estrutural, artigos.capitulo_estrutural,
                     artigos.secao_estrutural, artigos.subsecao_estrutural,
+                    artigos.descricao_estrutural, artigos.rubrica,
                     artigos.caput, artigos.revogado, artigos.ordem,
                     leis.slug AS lei_slug, leis.titulo AS lei_titulo
              FROM artigos
@@ -310,6 +313,8 @@ final class Artigo
             'capituloEstrutural' => $a['capitulo_estrutural'],
             'secaoEstrutural' => $a['secao_estrutural'],
             'subsecaoEstrutural' => $a['subsecao_estrutural'],
+            'descricaoEstrutural' => $a['descricao_estrutural'] ?? null,
+            'rubrica' => $a['rubrica'] ?? null,
             'caput' => $a['caput'],
             'revogado' => (bool) $a['revogado'],
             'ordem' => (int) $a['ordem'],

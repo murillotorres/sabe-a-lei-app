@@ -35,6 +35,12 @@ struct Artigo: Codable, Identifiable, Equatable {
     let capituloEstrutural: String?
     let secaoEstrutural: String?
     let subsecaoEstrutural: String?
+    /// Texto descritivo do cabeçalho estrutural mais específico (ex.: "Do
+    /// Crime" no Título II do Código Penal) — os campos acima só têm o rótulo.
+    let descricaoEstrutural: String?
+    /// Rubrica/epígrafe do próprio artigo (ex.: "Relação de causalidade").
+    /// Nem toda lei usa essa convenção, por isso é opcional.
+    let rubrica: String?
     let caput: String
     let revogado: Bool
     let ordem: Int

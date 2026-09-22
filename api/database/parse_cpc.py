@@ -12,7 +12,9 @@ ENTRADA = "cpc_raw.html"
 LEI_ID = 4
 CATEGORIA_ID = 2  # "codigos", já existe (criada para o Código Civil)
 ARTIGO_ID_INICIAL = 2939        # max(artigos.id) atual (2938) + 1
-DISPOSITIVO_ID_INICIAL = 5584   # max(artigo_dispositivos.id) atual (5583) + 1
+# Cascata: Código Civil (1.774 dispositivos, 2920-4693) + Código Penal (913
+# dispositivos, 4694-5606) — ver CONTEUDO.md sobre a convenção de ids fixos.
+DISPOSITIVO_ID_INICIAL = 5607
 
 # Regexes tolerantes a espaço em volta do ordinal e a sufixo de letra colado
 # (não separado por espaço) — ver parse_codigo_penal.py para o motivo de cada
@@ -74,12 +76,32 @@ def formatar_heading(texto):
     return f"{rotulo} {numeral}"
 
 
+def limpar_citacoes(texto: str) -> str:
+    """Remove parênteses finais em cadeia, tipo "(Incluído pela Lei nº X)
+    (Vigência)" — sobra só o texto descritivo, se houver."""
+    anterior = None
+    while anterior != texto:
+        anterior = texto
+        texto = re.sub(r"\s*\([^()]*\)\.?\s*$", "", texto).strip()
+        texto = re.sub(r"\s+Vig[eê]ncia\s*$", "", texto, flags=re.I).strip()
+    return texto
+
+
+def normalizar_descricao(texto):
+    """"DOS ATOS DAS PARTES" (caixa alta) -> "Dos atos das partes"."""
+    if not texto:
+        return None
+    return texto[0].upper() + texto[1:].lower()
+
+
 class Artigo:
-    def __init__(self, numero, contexto):
+    def __init__(self, numero, contexto, descricao=None, rubrica=None):
         self.numero = numero
         self.caput = ""
         self.revogado = False
         self.contexto = contexto  # (parte, livro, titulo, capitulo, secao, subsecao)
+        self.descricao = descricao
+        self.rubrica = rubrica
         self.dispositivos = []
 
 
@@ -117,12 +139,19 @@ def main():
         riscado.decompose()
 
     parte_atual = livro_atual = titulo_atual = capitulo_atual = secao_atual = subsecao_atual = None
+    descricao_parte = descricao_livro = descricao_titulo = None
+    descricao_capitulo = descricao_secao = descricao_subsecao = None
+    pendente_nivel = None
+    rubrica_pendente = None
     artigos: list[Artigo] = []
     artigo_atual = None
     pilha_nivel: dict[int, int] = {}
     nivel_container = 0
     em_citacao = False
     dentro_do_corpo = False
+
+    def descricao_atual():
+        return descricao_subsecao or descricao_secao or descricao_capitulo or descricao_titulo or descricao_livro or descricao_parte
 
     for p in soup.find_all("p"):
         texto = limpar_texto(p.get_text(" ", strip=True))
@@ -147,33 +176,82 @@ def main():
             if artigo_atual is not None:
                 artigo_atual.caput = (artigo_atual.caput + " " + texto).strip()
             em_citacao = ASPA_FECHA not in texto
+            rubrica_pendente = None
             continue
 
         eh_centralizado = (p.get("align") or "").upper() == "CENTER"
 
         if eh_centralizado:
+            if pendente_nivel is not None:
+                nivel_pendente, pendente_nivel = pendente_nivel, None
+                if not RE_HEADING_PARTE.match(texto) and not formatar_heading(texto):
+                    desc = normalizar_descricao(limpar_citacoes(texto))
+                    if desc:
+                        if nivel_pendente == "parte":
+                            descricao_parte = desc
+                        elif nivel_pendente == "livro":
+                            descricao_livro = desc
+                        elif nivel_pendente == "titulo":
+                            descricao_titulo = desc
+                        elif nivel_pendente == "capitulo":
+                            descricao_capitulo = desc
+                        elif nivel_pendente == "secao":
+                            descricao_secao = desc
+                        elif nivel_pendente == "subsecao":
+                            descricao_subsecao = desc
+                    continue
+
             m_parte = RE_HEADING_PARTE.match(texto)
             if m_parte:
                 parte_atual = f"Parte {m_parte.group(1).capitalize()}"
                 livro_atual = titulo_atual = capitulo_atual = secao_atual = subsecao_atual = None
+                descricao_parte = descricao_livro = descricao_titulo = None
+                descricao_capitulo = descricao_secao = descricao_subsecao = None
+                resto = limpar_citacoes(texto[m_parte.end():].strip())
+                if resto:
+                    descricao_parte = normalizar_descricao(resto)
+                else:
+                    pendente_nivel = "parte"
                 continue
 
             heading = formatar_heading(texto)
             if heading:
+                m_h = RE_HEADING_GENERICO.match(texto)
+                resto = limpar_citacoes(texto[m_h.end():].strip())
+                desc = normalizar_descricao(resto) if resto else None
                 if heading.startswith("Livro"):
                     livro_atual = heading
                     titulo_atual = capitulo_atual = secao_atual = subsecao_atual = None
+                    descricao_titulo = descricao_capitulo = descricao_secao = descricao_subsecao = None
+                    descricao_livro = desc
+                    if desc is None:
+                        pendente_nivel = "livro"
                 elif heading.startswith("Título"):
                     titulo_atual = heading
                     capitulo_atual = secao_atual = subsecao_atual = None
+                    descricao_capitulo = descricao_secao = descricao_subsecao = None
+                    descricao_titulo = desc
+                    if desc is None:
+                        pendente_nivel = "titulo"
                 elif heading.startswith("Capítulo"):
                     capitulo_atual = heading
                     secao_atual = subsecao_atual = None
+                    descricao_secao = descricao_subsecao = None
+                    descricao_capitulo = desc
+                    if desc is None:
+                        pendente_nivel = "capitulo"
                 elif heading.startswith("Subseção"):
                     subsecao_atual = heading
+                    descricao_subsecao = desc
+                    if desc is None:
+                        pendente_nivel = "subsecao"
                 elif heading.startswith("Seção"):
                     secao_atual = heading
                     subsecao_atual = None
+                    descricao_subsecao = None
+                    descricao_secao = desc
+                    if desc is None:
+                        pendente_nivel = "secao"
                 continue
             continue  # cabeçalho centralizado não reconhecido — ignora
 
@@ -181,13 +259,15 @@ def main():
         if len(revogados_em_bloco) >= 2:
             for numero, revtxt in revogados_em_bloco:
                 artigo_atual = Artigo(
-                    numero, (parte_atual, livro_atual, titulo_atual, capitulo_atual, secao_atual, subsecao_atual)
+                    numero, (parte_atual, livro_atual, titulo_atual, capitulo_atual, secao_atual, subsecao_atual),
+                    descricao=descricao_atual(),
                 )
                 artigo_atual.caput = revtxt
                 artigo_atual.revogado = True
                 artigos.append(artigo_atual)
             pilha_nivel = {}
             nivel_container = 0
+            rubrica_pendente = None
             continue
 
         m = RE_ARTIGO.match(texto)
@@ -197,8 +277,10 @@ def main():
                 numero += m.group(2)
             resto = m.group(3).strip()
             artigo_atual = Artigo(
-                numero, (parte_atual, livro_atual, titulo_atual, capitulo_atual, secao_atual, subsecao_atual)
+                numero, (parte_atual, livro_atual, titulo_atual, capitulo_atual, secao_atual, subsecao_atual),
+                descricao=descricao_atual(), rubrica=rubrica_pendente,
             )
+            rubrica_pendente = None
             artigo_atual.caput = resto
             if RE_REVOGADO_INICIO.match(resto):
                 artigo_atual.revogado = True
@@ -208,12 +290,14 @@ def main():
             continue
 
         if artigo_atual is None:
-            continue  # rubrica/nota antes do primeiro artigo — descarta
+            rubrica_pendente = None
+            continue  # nota antes do primeiro artigo — descarta
 
         m = RE_PARAGRAFO_UNICO.match(texto)
         if m:
             adicionar_dispositivo(artigo_atual, pilha_nivel, "paragrafo", "Parágrafo único", m.group(1).strip(), nivel=1)
             nivel_container = 1
+            rubrica_pendente = None
             continue
 
         m = RE_PARAGRAFO.match(texto)
@@ -223,6 +307,7 @@ def main():
             rotulo = f"§ {numero_paragrafo}º{sufixo}" if numero_paragrafo < 10 else f"§ {numero_paragrafo}{sufixo}"
             adicionar_dispositivo(artigo_atual, pilha_nivel, "paragrafo", rotulo, m.group(3).strip(), nivel=1)
             nivel_container = 1
+            rubrica_pendente = None
             continue
 
         m = RE_INCISO.match(texto)
@@ -230,11 +315,13 @@ def main():
             nivel = 2 if (1 in pilha_nivel and artigo_atual.dispositivos[pilha_nivel[1]]["tipo"] == "paragrafo") else 1
             adicionar_dispositivo(artigo_atual, pilha_nivel, "inciso", m.group(1), m.group(2).strip(), nivel=nivel)
             nivel_container = nivel
+            rubrica_pendente = None
             continue
 
         m = RE_ALINEA.match(texto)
         if m:
             adicionar_dispositivo(artigo_atual, pilha_nivel, "alinea", f"{m.group(1)})", m.group(2).strip(), nivel=nivel_container + 1)
+            rubrica_pendente = None
             continue
 
         if texto.lower().startswith("pena"):
@@ -244,11 +331,13 @@ def main():
                 disp["texto"] = (disp["texto"] + " " + texto).strip()
             else:
                 artigo_atual.caput = (artigo_atual.caput + " " + texto).strip()
+            rubrica_pendente = None
             continue
 
-        # Não bate com nenhum padrão conhecido — rubrica marginal ou nota,
-        # mesma política das demais leis: descarta em vez de arriscar
-        # emendar num dispositivo errado.
+        # Não bate com nenhum padrão conhecido: candidata a rubrica do
+        # PRÓXIMO "Art." (mesma lógica do Código Penal) — descartada se não
+        # for seguida de um (os "rubrica_pendente = None" acima).
+        rubrica_pendente = limpar_citacoes(texto) or None
 
     emitir_sql(artigos)
 
@@ -296,6 +385,7 @@ def emitir_sql(artigos: list):
             "(" + ", ".join([
                 str(artigo_id), str(LEI_ID), sql_str("permanente"), sql_str(artigo.numero),
                 sql_str(titulo_estrutural), sql_str(capitulo), sql_str(secao), sql_str(subsecao),
+                sql_str(artigo.descricao), sql_str(artigo.rubrica),
                 sql_str(artigo.caput), "1" if artigo.revogado else "0", str(ordem_artigo),
             ]) + ")"
         )
@@ -320,7 +410,7 @@ def emitir_sql(artigos: list):
 
     out.write(
         "INSERT INTO artigos (id, lei_id, parte, numero, titulo_estrutural, capitulo_estrutural, "
-        "secao_estrutural, subsecao_estrutural, caput, revogado, ordem) VALUES\n"
+        "secao_estrutural, subsecao_estrutural, descricao_estrutural, rubrica, caput, revogado, ordem) VALUES\n"
     )
     out.write(",\n".join(artigo_rows) + ";\n\n")
 

@@ -32,37 +32,63 @@ struct ArtigoDetailView: View {
             .map { $0.0 }
     }
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                if let artigoAtual {
-                    ArtigoCaputCardView(artigo: artigoAtual)
-                }
+    /// "Artigo 13", ou "Preâmbulo" no único caso em que o artigo não tem número.
+    private var tituloGrande: String {
+        guard let numero = artigoAtual?.numero else { return "Artigo" }
+        return numero == "Preâmbulo" ? "Preâmbulo" : "Artigo \(numero)"
+    }
 
-                if isLoading && artigo == nil {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 24)
-                } else if let errorMessage {
-                    Text(errorMessage)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 24)
-                } else if !searchText.isEmpty && dispositivosFiltrados.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
-                        .padding(.top, 24)
-                } else {
-                    ForEach(dispositivosFiltrados) { dispositivo in
-                        DispositivoCardView(dispositivo: dispositivo, artigoId: artigoId, destacado: !searchText.isEmpty)
-                    }
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tituloGrande)
+                    .font(.largeTitle.bold())
+                if let rubrica = artigoAtual?.rubrica {
+                    Text(rubrica)
+                        .font(.title2.bold())
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal)
+            .padding(.top, 12)
+
+            // Campo de busca próprio (em vez de .searchable) pra ficar sempre
+            // visível logo abaixo do título grande, não rolar junto com o
+            // conteúdo nem sumir dentro da barra de navegação.
+            CampoBuscaFixoView(texto: $searchText, prompt: "Buscar neste artigo")
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let artigoAtual {
+                        ArtigoCaputCardView(artigo: artigoAtual)
+                    }
+
+                    if isLoading && artigo == nil {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 24)
+                    } else if let errorMessage {
+                        Text(errorMessage)
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 24)
+                    } else if !searchText.isEmpty && dispositivosFiltrados.isEmpty {
+                        ContentUnavailableView.search(text: searchText)
+                            .padding(.top, 24)
+                    } else {
+                        ForEach(dispositivosFiltrados) { dispositivo in
+                            DispositivoCardView(dispositivo: dispositivo, artigoId: artigoId, destacado: !searchText.isEmpty)
+                        }
+                    }
+                }
+                .padding()
+            }
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle(artigoAtual?.titulo ?? "Artigo")
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $searchText, prompt: "Buscar neste artigo")
         .task { await load() }
     }
 
@@ -144,6 +170,37 @@ private struct FavoritoButton: View {
         }
         .buttonStyle(.plain)
         .disabled(isToggling)
+    }
+}
+
+/// Campo de busca com a aparência do padrão do sistema, mas fora da barra de
+/// navegação — usado no lugar de `.searchable()` quando o campo precisa ficar
+/// fixo num ponto específico da tela (logo abaixo do título grande do
+/// artigo), em vez de rolar junto com o conteúdo ou de ficar preso na barra.
+private struct CampoBuscaFixoView: View {
+    @Binding var texto: String
+    let prompt: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField(prompt, text: $texto)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+            if !texto.isEmpty {
+                Button {
+                    texto = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .background(Color(.systemGray5), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -323,6 +380,7 @@ private enum BuscaTexto {
                 id: 6, parte: "permanente", numero: "5",
                 tituloEstrutural: "Título II", capituloEstrutural: "Capítulo I",
                 secaoEstrutural: nil, subsecaoEstrutural: nil,
+                descricaoEstrutural: "Do crime", rubrica: "Relação de causalidade",
                 caput: "Todos são iguais perante a lei...",
                 revogado: false, ordem: 5, leiSlug: nil, leiTitulo: nil,
                 trechoCorrespondente: nil
