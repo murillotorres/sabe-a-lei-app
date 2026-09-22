@@ -13,7 +13,7 @@ DerivedData/
 api/.env
 api/database/*.sql
 api/database/*.html
-api/database/parse_stats.txt
+api/database/parse_stats*.txt
 
 # Local tooling config (Claude Code permission cache, machine-specific)
 .claude/

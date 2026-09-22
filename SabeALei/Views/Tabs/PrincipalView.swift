@@ -50,18 +50,28 @@ struct HomeCardView: View {
     let icone: String
     var cor: Color = .accentColor
 
+    /// Lado do quadrado do ícone — a altura do card é travada nesse mesmo
+    /// valor, senão o quadrado esticaria pra virar retângulo.
+    private let ladoIcone: CGFloat = 48
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        HStack(spacing: 12) {
             Image(systemName: icone)
-                .font(.title2)
-                .foregroundStyle(cor)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: ladoIcone, height: ladoIcone)
+                .background(cor)
             Text(titulo)
                 .font(.headline)
                 .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, minHeight: 90, alignment: .leading)
-        .padding(16)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .padding(.trailing, 16)
+        .frame(maxWidth: .infinity, minHeight: ladoIcone, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

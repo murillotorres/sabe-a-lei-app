@@ -166,12 +166,55 @@ verificado nem corrigido lá (fora do escopo desta lei).
   (Art. 129, sem o traço que os incisos vizinhos têm) e "A rt. 107" (espaço espúrio dentro
   de "Art.").
 
+## Código de Processo Civil
+
+- **Categoria:** `codigos` (mesma dos outros códigos — `INSERT IGNORE`, não recria)
+- **Lei:** `codigo-processo-civil-2015` — Código de Processo Civil (Lei nº 13.105, de 2015)
+- **Fonte:** https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm
+- **Seed:** `api/database/seed_cpc.sql` (idempotente — apaga e recria `lei_id = 4`, não mexe
+  nas outras leis)
+- **Parser:** `api/database/parse_cpc.py` (Python 3 + BeautifulSoup)
+
+Total: **1.073 artigos** (1.071 numerados de 1 a 1.072 — falta o 945, revogado sem deixar
+nem um "(Revogado)" no texto compilado — + 2 variações com sufixo de letra: `699-A`,
+`1.035-A`) e **2.843 dispositivos**. Hierarquia igual à do Código Civil: Parte → Livro →
+Título → Capítulo → Seção → Subseção, com `titulo_estrutural` = `'Parte · Livro · Título'`.
+
+### Diferenças de formato encontradas
+
+- **Charset Windows-1252** (mesmo motivo do Código Penal — aspas curvas e travessão em
+  bytes fora do ISO-8859-1).
+- **Redação superada nem sempre usa `<strike>`**: às vezes é só CSS inline
+  (`style="text-decoration:line-through"` num `<span>`/`<font>`), sem a tag — o parser
+  descompõe os dois casos. Sem isso, o Art. 153 (por exemplo) aparecia duas vezes: a
+  redação de 2015 e a redação atual.
+- **Citação literal de outra lei dentro de um artigo do próprio CPC**: as "Disposições
+  Finais e Transitórias" (Arts. 1.060–1.071) alteram outras leis (Lei de Arbitragem,
+  Código Civil, Código Eleitoral, Lei de Registros Públicos...) citando o texto integral
+  do artigo alterado, sempre entre aspas curvas (`"..."`). Sem tratamento especial, esse
+  texto citado — que tem sua própria numeração de Art./§/inciso — seria lido como um
+  artigo novo do CPC, colidindo com um artigo real do CPC de mesmo número (ex.: a citação
+  do "Art. 275" do Código Eleitoral dentro do Art. 1.067 do CPC quase virou um "Art. 275"
+  fantasma, quando o CPC já tem um Art. 275 de verdade). O parser detecta a abertura
+  (linha começando com `"`) e o fechamento (linha contendo `"`) e trata tudo no meio como
+  continuação do caput do artigo do CPC que abriu a citação, nunca como dispositivo novo.
+- **`(VETADO)` mantém a numeração** (ao contrário do Código Penal, onde alguns vetos
+  ficam sem nenhum número): `Art. 1.055. (VETADO).` é só mais um artigo, marcado
+  `revogado = 1` pela mesma heurística que já cobre "vetado" além de "revogado".
+
+### Limitações conhecidas
+
+- Mesma heurística de `revogado`/`vetado` das demais leis (regex no início do texto).
+- O Art. 945 não existe no banco (revogado no texto compilado sem deixar substituto) —
+  não é um bug do parser, é assim que o Planalto publica; ver `parse_stats_cpc.txt` (não
+  versionado) para os totais exatos de uma reexecução.
+
 ## Pendente (ainda não cadastrado)
 
-- **Outros Códigos** (Processo Civil, Processo Penal, etc.) — a aba "Códigos" no app hoje
-  ainda é placeholder (Constituição, Código Civil e Código Penal já têm cards próprios na
-  Biblioteca).
-- **Estatutos** (ECA, Idoso, etc.) — aba "Estatutos" no app ainda é placeholder.
+- **Outros Códigos** (Processo Penal, Tributário Nacional, etc.) e **Estatutos** (ECA,
+  Idoso, etc.) — sem cards na Biblioteca por enquanto (os cards "Códigos", "Estatutos" e
+  "Todas as Leis" foram removidos da grade a pedido; as telas placeholder ainda existem em
+  `SabeALei/Views/Tabs/` mas não são mais navegáveis).
 - Categoria `estatutos` ainda não existe na tabela `categorias`.
 
 ## Como reaplicar / atualizar
@@ -180,6 +223,7 @@ verificado nem corrigido lá (fora do escopo desta lei).
 mysql -h <host> -u <user> -p < api/database/seed_constituicao.sql
 mysql -h <host> -u <user> -p < api/database/seed_codigo_civil.sql
 mysql -h <host> -u <user> -p < api/database/seed_codigo_penal.sql
+mysql -h <host> -u <user> -p < api/database/seed_cpc.sql
 ```
 
 Cada script cria as tabelas com `CREATE TABLE IF NOT EXISTS` e, antes de inserir, apaga
