@@ -23,6 +23,8 @@ struct LeiArtigosView: View {
     @State private var searchText = ""
     @State private var searchResults: [Artigo] = []
     @State private var isSearchingRemote = false
+    @State private var isSearchActive = false
+    @FocusState private var isSearchFieldFocused: Bool
 
     private var displayedArtigos: [Artigo] {
         guard !searchText.isEmpty else { return artigos }
@@ -52,6 +54,28 @@ struct LeiArtigosView: View {
         return "\(numero)-\(letra.uppercased())"
     }
 
+    /// Botão de busca da navigation bar. Nenhum `.buttonStyle` é aplicado
+    /// aqui de propósito: dentro de um `ToolbarItem`, o próprio sistema já
+    /// desenha o vidro (Liquid Glass) automaticamente a partir do iOS 26 —
+    /// igual ao botão voltar, que também não tem estilo nenhum. Aplicar
+    /// `.buttonStyle(.glass)` por cima duplicava o efeito (dois círculos
+    /// concêntricos, um do toolbar e outro do botão).
+    private var botaoDeBusca: some View {
+        Button {
+            ativarBusca()
+        } label: {
+            Image(systemName: "magnifyingglass")
+        }
+        .accessibilityLabel("Pesquisar")
+    }
+
+    private func ativarBusca() {
+        isSearchFieldFocused = true
+        withAnimation(.snappy(duration: 0.25)) {
+            isSearchActive = true
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if mostrarSeletorParte {
@@ -66,9 +90,35 @@ struct LeiArtigosView: View {
 
             content
         }
+        // Voltar e título ficam 100% nativos (navigation bar do sistema) — no
+        // iOS 26 isso já dá o botão voltar no estilo "Liquid Glass" padrão,
+        // sem precisar recriar nada na mão.
         .navigationTitle(titulo)
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $searchText, prompt: "Buscar por número ou texto...")
+        // O botão de busca é próprio (não `.searchable`) pra ficar na mesma
+        // navigation bar do voltar: a partir do iOS 26, `.searchable` sem
+        // placement customizado passou a ancorar um campo flutuante no
+        // rodapé da tela (padrão novo do sistema), separado do voltar.
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                botaoDeBusca
+            }
+        }
+        // O campo de busca some assim que ativado, no lugar de qualquer
+        // outro conteúdo fixo — a localização estrutural (Parte/Título/
+        // Capítulo) não é mais um header separado aqui: é o cabeçalho nativo
+        // de cada `Section` da lista (ver `ArtigoListView`), do mesmo jeito
+        // que o índice alfabético do app Contatos fica fixo ao rolar, sem
+        // nenhum background próprio — por isso não cria emenda com a nav bar.
+        .safeAreaInset(edge: .top) {
+            if isSearchActive {
+                CampoBuscaHeaderView(searchText: $searchText, isSearchFieldFocused: $isSearchFieldFocused) {
+                    isSearchActive = false
+                    searchText = ""
+                    isSearchFieldFocused = false
+                }
+            }
+        }
         .task(id: parte) {
             await load()
         }
@@ -155,6 +205,13 @@ struct LeiArtigosView: View {
 }
 
 /// Lista os artigos em cards, agrupados pelo título/capítulo/seção estrutural quando disponível.
+///
+/// O título de cada grupo é o cabeçalho nativo da `Section` — o próprio
+/// `List` (.plain) já fixa esse cabeçalho no topo enquanto a seção rola por
+/// baixo dele, do mesmo jeito que o índice alfabético do app Contatos fica
+/// fixo. Sem background/material próprio de propósito: só texto sobre o
+/// fundo natural da lista, igual à letra do índice — é isso que garante que
+/// não apareça nenhuma emenda visual durante a rolagem.
 struct ArtigoListView: View {
     let artigos: [Artigo]
 
