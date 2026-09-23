@@ -59,28 +59,6 @@ struct LeiArtigosView: View {
         .accessibilityLabel("Pesquisar")
     }
 
-    /// Botão de fechar a busca. Diferente do `botaoDeBusca`, este não é um
-    /// `ToolbarItem` — vive no `safeAreaInset` junto do campo, então o sistema
-    /// não aplica o vidro automaticamente; precisa do `.buttonStyle(.glass)`
-    /// manual pra ficar com a mesma aparência.
-    @ViewBuilder
-    private var botaoFecharBusca: some View {
-        if #available(iOS 26.0, *) {
-            Button(action: cancelarBusca) {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(.glass)
-            .accessibilityLabel("Cancelar busca")
-        } else {
-            Button(action: cancelarBusca) {
-                Image(systemName: "xmark")
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Cancelar busca")
-        }
-    }
-
     private func ativarBusca() {
         // Aqui só entra o campo em cena (nav bar some, campo aparece, animado).
         // O foco/teclado fica de fora de propósito: quem pede é o próprio
@@ -134,13 +112,11 @@ struct LeiArtigosView: View {
         }
         .safeAreaInset(edge: .top) {
             if isSearchActive {
-                HStack(spacing: 12) {
-                    BuscaNaBarraView(searchText: $searchText, isSearchFieldFocused: $isSearchFieldFocused)
-                    botaoFecharBusca
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(.bar, ignoresSafeAreaEdges: .top)
+                BarraDeBuscaView(
+                    searchText: $searchText,
+                    isSearchFieldFocused: $isSearchFieldFocused,
+                    fechar: cancelarBusca
+                )
                 .transition(.opacity)
             }
         }

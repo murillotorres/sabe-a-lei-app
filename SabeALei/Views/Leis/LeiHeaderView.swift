@@ -1,5 +1,48 @@
 import SwiftUI
 
+/// Medidas da barra de busca, iguais às da navigation bar nativa do iOS 26
+/// (medidas no aparelho): controles circulares de 44 pt e 16 pt de margem até
+/// a borda da tela. Com isso o "X" cai exatamente onde estava o botão de
+/// busca, e o campo ocupa o lugar do botão voltar + título.
+enum MedidasDaBusca {
+    static let controle: CGFloat = 44
+    static let margem: CGFloat = 16
+}
+
+/// Barra que ocupa o lugar da navigation bar enquanto a busca está ativa:
+/// campo de busca + botão de fechar, com as mesmas medidas e posições dos
+/// botões nativos (ver `MedidasDaBusca`).
+struct BarraDeBuscaView: View {
+    @Binding var searchText: String
+    var isSearchFieldFocused: FocusState<Bool>.Binding
+    var fechar: @MainActor () -> Void
+
+    var body: some View {
+        HStack(spacing: MedidasDaBusca.margem) {
+            BuscaNaBarraView(searchText: $searchText, isSearchFieldFocused: isSearchFieldFocused)
+
+            // Fora de um `ToolbarItem` o sistema não desenha o vidro sozinho —
+            // aqui ele é aplicado à mão, num círculo com o mesmo diâmetro do
+            // botão de busca da toolbar.
+            Button(action: fechar) {
+                Image(systemName: "xmark")
+                    .frame(width: MedidasDaBusca.controle, height: MedidasDaBusca.controle)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .vidro(em: Circle(), interativo: true)
+            .accessibilityLabel("Cancelar busca")
+        }
+        .padding(.horizontal, MedidasDaBusca.margem)
+        // Sem padding em cima: os controles ficam exatamente na altura dos
+        // botões da navigation bar. Embaixo, um respiro pra borda da barra não
+        // encostar no vidro.
+        .padding(.bottom, 8)
+        .background(.bar, ignoresSafeAreaEdges: .top)
+    }
+}
+
 /// Campo de busca com foco automático, mostrado no topo da tela do livro
 /// enquanto a busca está ativa (no lugar da navigation bar nativa).
 ///
@@ -38,12 +81,9 @@ struct BuscaNaBarraView: View {
             }
         }
         .padding(.horizontal, 12)
-        // Mesma altura do botão "X" ao lado (toolbar item padrão do
-        // sistema) — antes, com padding vertical só, o campo ficava mais
-        // baixo que o botão.
         .frame(maxWidth: .infinity)
-        .frame(height: 44)
-        .pilulaDeVidro()
+        .frame(height: MedidasDaBusca.controle)
+        .vidro(em: Capsule())
         // O foco NÃO é pedido no `.onAppear`: ele roda dentro da mesma passada
         // de layout/commit que insere o campo, e o primeiro `becomeFirstResponder`
         // do processo carrega os frameworks de entrada de texto (TextInputUI,
@@ -68,12 +108,13 @@ struct BuscaNaBarraView: View {
 }
 
 private extension View {
+    /// Liquid Glass nativo a partir do iOS 26; `Material` como aproximação antes.
     @ViewBuilder
-    func pilulaDeVidro() -> some View {
+    func vidro<S: Shape>(em forma: S, interativo: Bool = false) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(.regular, in: Capsule())
+            self.glassEffect(interativo ? .regular.interactive() : .regular, in: forma)
         } else {
-            self.background(.regularMaterial, in: Capsule())
+            self.background(.regularMaterial, in: forma)
         }
     }
 
@@ -93,8 +134,7 @@ private extension View {
     @Previewable @FocusState var focus: Bool
 
     return VStack {
-        BuscaNaBarraView(searchText: $searchText, isSearchFieldFocused: $focus)
-            .padding()
+        BarraDeBuscaView(searchText: $searchText, isSearchFieldFocused: $focus, fechar: {})
         Spacer()
     }
     .background(Color(.systemGroupedBackground))
