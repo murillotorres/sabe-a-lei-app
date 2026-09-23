@@ -25,7 +25,7 @@ struct FavoritosView: View {
                 ContentUnavailableView(
                     "Nenhum favorito ainda",
                     systemImage: "star",
-                    description: Text("Toque na estrela de um artigo ou parágrafo para favoritá-lo.")
+                    description: Text("Toque na estrela de um artigo para favoritá-lo.")
                 )
             } else {
                 List {

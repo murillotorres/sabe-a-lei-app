@@ -43,11 +43,13 @@ por um parser (`BeautifulSoup` + regex) que:
 
 ## Código Civil
 
-- **Categoria:** `codigos` (nova — antes só existia `constituicao-federal`)
+- **Categoria:** `codigos` (nova — antes só existia `constituicao-federal`; `INSERT IGNORE`,
+  pois é compartilhada com o Código Penal e o CPC e não pode ser apagada — o `DELETE` antigo
+  falhava com `#1451` ao importar num banco que já tinha essas leis)
 - **Lei:** `codigo-civil-2002` — Código Civil (Lei nº 10.406, de 2002)
 - **Fonte:** https://www.planalto.gov.br/ccivil_03/leis/2002/l10406compilada.htm
-- **Seed:** `api/database/seed_codigo_civil.sql` (idempotente — apaga e recria `lei_id = 2` /
-  `categoria_id = 2`, não mexe na Constituição)
+- **Seed:** `api/database/seed_codigo_civil.sql` (idempotente — apaga e recria só `lei_id = 2`,
+  não mexe na Constituição nem na categoria)
 - **Parser:** `api/database/parse_codigo_civil.py` (Python 3 + BeautifulSoup)
 
 Total: **2.092 artigos** (2.046 numerados + variações com sufixo de letra, ex.

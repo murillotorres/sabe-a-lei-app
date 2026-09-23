@@ -366,11 +366,13 @@ def emitir_sql(artigos: list):
     out.write(f"DELETE FROM artigo_dispositivos WHERE artigo_id IN (SELECT id FROM artigos WHERE lei_id = {LEI_ID});\n")
     out.write(f"DELETE FROM artigos WHERE lei_id = {LEI_ID};\n")
     out.write(f"DELETE FROM leis WHERE id = {LEI_ID};\n")
-    out.write(f"DELETE FROM categorias WHERE id = {CATEGORIA_ID};\n")
     out.write("SET FOREIGN_KEY_CHECKS=1;\n\n")
 
-    out.write("INSERT INTO categorias (id, slug, nome) VALUES\n")
-    out.write(f"({CATEGORIA_ID}, 'codigos', 'Códigos');\n\n")
+    # A categoria `codigos` é compartilhada com o Código Penal e o CPC, então
+    # não é apagada aqui (o DELETE falhava com #1451 num banco onde essas leis
+    # já apontam pra ela, e o SET FOREIGN_KEY_CHECKS=0 acima não vale em todo
+    # import, ex. phpMyAdmin) — só garantida, como nos outros dois seeds.
+    out.write(f"INSERT IGNORE INTO categorias (id, slug, nome) VALUES ({CATEGORIA_ID}, 'codigos', 'Códigos');\n\n")
 
     out.write("INSERT INTO leis (id, categoria_id, slug, titulo, descricao, fonte_url) VALUES\n")
     out.write(

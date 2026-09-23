@@ -7,26 +7,31 @@ struct ArtigoDetailView: View {
     /// Dados já conhecidos da listagem, usados para exibir algo enquanto o detalhe carrega.
     var resumo: Artigo?
 
+    @Environment(AuthStore.self) private var authStore
+    @Environment(FavoritosStore.self) private var favoritosStore
+
     @State private var artigo: Artigo?
-    @State private var dispositivos: [ArtigoDispositivo] = []
+    @State private var blocos: [BlocoDispositivo] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var searchText = ""
+    @State private var isTogglingFavorito = false
 
     private var artigoAtual: Artigo? { artigo ?? resumo }
 
-    /// Filtra e reordena os dispositivos por compatibilidade com a busca —
-    /// mesmo critério usado na busca geral da Constituição (quantas palavras
-    /// batem, priorizando as que aparecem mais próximas umas das outras),
-    /// só que aplicado apenas ao conteúdo deste artigo, já carregado localmente.
-    private var dispositivosFiltrados: [ArtigoDispositivo] {
-        guard !searchText.isEmpty else { return dispositivos }
+    /// Filtra e reordena os cards por compatibilidade com a busca — mesmo
+    /// critério usado na busca geral da Constituição (quantas palavras batem,
+    /// priorizando as que aparecem mais próximas umas das outras), só que
+    /// aplicado apenas ao conteúdo deste artigo, já carregado localmente. Cada
+    /// card é pontuado pelo texto todo (parágrafo/inciso + suas alíneas).
+    private var blocosFiltrados: [BlocoDispositivo] {
+        guard !searchText.isEmpty else { return blocos }
 
         let tokens = BuscaTexto.tokenizar(searchText)
-        guard !tokens.isEmpty else { return dispositivos }
+        guard !tokens.isEmpty else { return blocos }
 
-        return dispositivos
-            .map { ($0, BuscaTexto.pontuar($0.texto, tokens: tokens)) }
+        return blocos
+            .map { ($0, BuscaTexto.pontuar($0.textoCompleto, tokens: tokens)) }
             .filter { $0.1 > 0 }
             .sorted { $0.1 > $1.1 }
             .map { $0.0 }
@@ -38,27 +43,50 @@ struct ArtigoDetailView: View {
         return numero == "Preâmbulo" ? "Preâmbulo" : "Artigo \(numero)"
     }
 
+    private var isFavorito: Bool {
+        favoritosStore.estaFavoritado(artigoId: artigoId, dispositivoId: nil)
+    }
+
+    /// Estrela da barra de navegação. Nenhum `.buttonStyle` de propósito: dentro
+    /// de um `ToolbarItem` o sistema já desenha o vidro sozinho (igual ao botão
+    /// voltar) — só o artigo inteiro pode ser favoritado.
+    private var botaoFavorito: some View {
+        Button(action: alternarFavorito) {
+            Image(systemName: isFavorito ? "star.fill" : "star")
+                .foregroundStyle(isFavorito ? .yellow : .primary)
+        }
+        .disabled(isTogglingFavorito)
+        .accessibilityLabel(isFavorito ? "Remover dos favoritos" : "Favoritar")
+    }
+
+    private func alternarFavorito() {
+        guard let token = authStore.token else { return }
+        isTogglingFavorito = true
+        Task {
+            await favoritosStore.alternar(artigoId: artigoId, dispositivoId: nil, token: token)
+            isTogglingFavorito = false
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tituloGrande)
-                    .font(.largeTitle.bold())
-                if let rubrica = artigoAtual?.rubrica {
-                    Text(rubrica)
-                        .font(.title2.bold())
-                        .foregroundStyle(.secondary)
-                }
+            // O subtítulo fica logo abaixo da barra de navegação (onde está o
+            // título), centralizado e fixo — não rola junto com o conteúdo.
+            if let rubrica = artigoAtual?.rubrica {
+                Text(rubrica)
+                    .font(.title3.bold())
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal)
+                    // Negativo de propósito: a barra de navegação já reserva uma
+                    // folga abaixo do título, e somada ao padding normal deixava
+                    // um vão grande entre título e subtítulo. Como o padding
+                    // negativo encolhe o layout, o conteúdo sobe junto e a
+                    // distância até o primeiro card não muda.
+                    .padding(.top, -14)
+                    .padding(.bottom, 8)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal)
-            .padding(.top, 12)
-
-            // Campo de busca próprio (em vez de .searchable) pra ficar sempre
-            // visível logo abaixo do título grande, não rolar junto com o
-            // conteúdo nem sumir dentro da barra de navegação.
-            CampoBuscaFixoView(texto: $searchText, prompt: "Buscar neste artigo")
-                .padding(.horizontal)
-                .padding(.vertical, 8)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -75,12 +103,12 @@ struct ArtigoDetailView: View {
                             .foregroundStyle(.red)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 24)
-                    } else if !searchText.isEmpty && dispositivosFiltrados.isEmpty {
+                    } else if !searchText.isEmpty && blocosFiltrados.isEmpty {
                         ContentUnavailableView.search(text: searchText)
                             .padding(.top, 24)
                     } else {
-                        ForEach(dispositivosFiltrados) { dispositivo in
-                            DispositivoCardView(dispositivo: dispositivo, artigoId: artigoId, destacado: !searchText.isEmpty)
+                        ForEach(blocosFiltrados) { bloco in
+                            DispositivoCardView(bloco: bloco, destacado: !searchText.isEmpty)
                         }
                     }
                 }
@@ -88,7 +116,25 @@ struct ArtigoDetailView: View {
             }
         }
         .background(Color(.systemGroupedBackground))
+        // Título nativo, centralizado na barra, na mesma linha do botão voltar.
+        .navigationTitle(tituloGrande)
         .navigationBarTitleDisplayMode(.inline)
+        // Sem a barra de tabs nesta tela: o rodapé é da busca.
+        .toolbar(.hidden, for: .tabBar)
+        // Busca nativa. A partir do iOS 26 o item de busca vai para a barra
+        // inferior (Liquid Glass do sistema); antes disso fica no topo.
+        .searchable(text: $searchText, prompt: "Buscar neste artigo")
+        .naoEsconderBarraNaBusca()
+        .toolbar {
+            if authStore.isAuthenticated {
+                ToolbarItem(placement: .topBarTrailing) {
+                    botaoFavorito
+                }
+            }
+            if #available(iOS 26.0, *) {
+                DefaultToolbarItem(kind: .search, placement: .bottomBar)
+            }
+        }
         .task { await load() }
     }
 
@@ -100,7 +146,7 @@ struct ArtigoDetailView: View {
         do {
             let response = try await LeisService.artigo(id: artigoId)
             artigo = response.artigo
-            dispositivos = response.dispositivos
+            blocos = BlocoDispositivo.agrupar(response.dispositivos)
         } catch let error as APIError {
             errorMessage = error.errorDescription
         } catch {
@@ -112,27 +158,11 @@ struct ArtigoDetailView: View {
 private struct ArtigoCaputCardView: View {
     let artigo: Artigo
 
-    @Environment(AuthStore.self) private var authStore
-    @Environment(FavoritosStore.self) private var favoritosStore
-    @State private var isToggling = false
-
     var body: some View {
+        // Sem o "Art. N" aqui: o número já é o título da barra de navegação.
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(artigo.titulo)
-                    .font(.title3.bold())
-                if artigo.revogado {
-                    Text("Revogado")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.red.opacity(0.15), in: Capsule())
-                        .foregroundStyle(.red)
-                }
-                Spacer()
-                if authStore.isAuthenticated {
-                    FavoritoButton(isFavorito: isFavorito, isToggling: isToggling, acao: alternarFavorito)
-                }
+            if artigo.revogado {
+                SeloRevogadoView()
             }
             Text(artigo.caput)
                 .font(.body)
@@ -141,128 +171,84 @@ private struct ArtigoCaputCardView: View {
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
     }
-
-    private var isFavorito: Bool {
-        favoritosStore.estaFavoritado(artigoId: artigo.id, dispositivoId: nil)
-    }
-
-    private func alternarFavorito() {
-        guard let token = authStore.token else { return }
-        isToggling = true
-        Task {
-            await favoritosStore.alternar(artigoId: artigo.id, dispositivoId: nil, token: token)
-            isToggling = false
-        }
-    }
 }
 
-/// Botão de estrela reaproveitado no artigo (card do caput) e em cada
-/// parágrafo — o único tipo de dispositivo que também pode ser favoritado.
-private struct FavoritoButton: View {
-    let isFavorito: Bool
-    let isToggling: Bool
-    let acao: () -> Void
+/// Um card da tela do artigo: um parágrafo ou inciso e, dentro dele, as
+/// alíneas (e itens) que o detalham — esses não ganham card próprio.
+struct BlocoDispositivo: Identifiable, Equatable {
+    let principal: ArtigoDispositivo
+    private(set) var subitens: [ArtigoDispositivo]
 
-    var body: some View {
-        Button(action: acao) {
-            Image(systemName: isFavorito ? "star.fill" : "star")
-                .foregroundStyle(isFavorito ? .yellow : .secondary)
-        }
-        .buttonStyle(.plain)
-        .disabled(isToggling)
+    var id: Int { principal.id }
+
+    /// Todo o texto que o card mostra — é sobre ele que a busca pontua.
+    var textoCompleto: String {
+        ([principal.texto] + subitens.map(\.texto)).joined(separator: " ")
     }
-}
 
-/// Campo de busca com a aparência do padrão do sistema, mas fora da barra de
-/// navegação — usado no lugar de `.searchable()` quando o campo precisa ficar
-/// fixo num ponto específico da tela (logo abaixo do título grande do
-/// artigo), em vez de rolar junto com o conteúdo ou de ficar preso na barra.
-private struct CampoBuscaFixoView: View {
-    @Binding var texto: String
-    let prompt: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField(prompt, text: $texto)
-                .textFieldStyle(.plain)
-                .autocorrectionDisabled()
-            if !texto.isEmpty {
-                Button {
-                    texto = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
+    /// Agrupa os dispositivos (já em ordem de leitura): cada parágrafo ou inciso
+    /// abre um card, e o que vem depois dele (alíneas, itens) entra nesse card.
+    static func agrupar(_ dispositivos: [ArtigoDispositivo]) -> [BlocoDispositivo] {
+        var blocos: [BlocoDispositivo] = []
+        for dispositivo in dispositivos {
+            let abreCard = dispositivo.tipo == "paragrafo" || dispositivo.tipo == "inciso"
+            if !abreCard, !blocos.isEmpty {
+                blocos[blocos.count - 1].subitens.append(dispositivo)
+            } else {
+                blocos.append(BlocoDispositivo(principal: dispositivo, subitens: []))
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 10)
-        .background(Color(.systemGray5), in: RoundedRectangle(cornerRadius: 10))
+        return blocos
     }
 }
 
-/// Um card por parágrafo/inciso/alínea/item, indentado conforme o nível de aninhamento.
+/// Card de parágrafo/inciso: o tipo em letras pequenas com a bolinha do número
+/// logo abaixo, à esquerda; o texto à direita, seguido da lista de alíneas
+/// (bolinhas amarelas) quando houver. Indentado conforme o nível de aninhamento.
 struct DispositivoCardView: View {
-    let dispositivo: ArtigoDispositivo
-    /// Artigo dono deste dispositivo — precisa pra favoritar o parágrafo.
-    let artigoId: Int
+    let bloco: BlocoDispositivo
     /// true quando este card é resultado de uma busca dentro do artigo — pinta
     /// o fundo de amarelo, no mesmo estilo do trecho destacado na busca geral.
     var destacado: Bool = false
 
-    @Environment(AuthStore.self) private var authStore
-    @Environment(FavoritosStore.self) private var favoritosStore
-    @State private var isToggling = false
+    /// 9 pt no tamanho de texto padrão; continua acompanhando o Dynamic Type.
+    @ScaledMetric(relativeTo: .caption2) private var fonteDoTipo: CGFloat = 9
 
-    private var accentColor: Color {
-        switch dispositivo.tipo {
-        case "paragrafo": return .blue
-        case "inciso": return .teal
-        case "alinea": return .orange
-        default: return .secondary
-        }
-    }
-
-    /// Só parágrafos podem ser favoritados (junto com o artigo inteiro) —
-    /// incisos e alíneas não, mesma regra validada no backend.
-    private var podeFavoritar: Bool {
-        dispositivo.tipo == "paragrafo" && authStore.isAuthenticated
-    }
-
-    private var isFavorito: Bool {
-        favoritosStore.estaFavoritado(artigoId: artigoId, dispositivoId: dispositivo.id)
-    }
+    private var dispositivo: ArtigoDispositivo { bloco.principal }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text(dispositivo.rotulo)
-                .font(.caption.bold())
-                .foregroundStyle(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(accentColor, in: Capsule())
-                .fixedSize()
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 4) {
+                if let tipo = dispositivo.nomeDoTipo {
+                    Text(tipo)
+                        .font(.system(size: fonteDoTipo, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                MarcadorView(
+                    texto: dispositivo.rotuloCompacto,
+                    cor: dispositivo.cor,
+                    corDoTexto: dispositivo.corDoTexto
+                )
+            }
+            .frame(width: 60)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text(dispositivo.texto)
-                    .font(.subheadline)
-                if dispositivo.revogado {
-                    Text("Revogado")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.red.opacity(0.15), in: Capsule())
-                        .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(dispositivo.texto)
+                        .font(.subheadline)
+                    if dispositivo.revogado {
+                        SeloRevogadoView()
+                    }
+                }
+
+                ForEach(bloco.subitens) { subitem in
+                    SubitemView(subitem: subitem, nivelDoCard: dispositivo.nivel)
                 }
             }
-
-            if podeFavoritar {
-                Spacer(minLength: 8)
-                FavoritoButton(isFavorito: isFavorito, isToggling: isToggling, acao: alternarFavorito)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -277,14 +263,109 @@ struct DispositivoCardView: View {
         .padding(.leading, CGFloat(max(0, dispositivo.nivel - 1)) * 20)
         .opacity(dispositivo.revogado ? 0.6 : 1)
     }
+}
 
-    private func alternarFavorito() {
-        guard let token = authStore.token else { return }
-        isToggling = true
-        Task {
-            await favoritosStore.alternar(artigoId: artigoId, dispositivoId: dispositivo.id, token: token)
-            isToggling = false
+/// Uma alínea (ou item) dentro do card do parágrafo/inciso: bolinha com a letra
+/// e o texto ao lado, em formato de lista.
+private struct SubitemView: View {
+    let subitem: ArtigoDispositivo
+    /// Nível do parágrafo/inciso dono do card — itens mais fundos que as alíneas
+    /// (filhos delas) ganham um recuo a mais.
+    let nivelDoCard: Int
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            MarcadorView(
+                texto: subitem.rotuloCompacto,
+                cor: subitem.cor,
+                corDoTexto: subitem.corDoTexto,
+                lado: 26,
+                fonte: .caption2.bold()
+            )
+            VStack(alignment: .leading, spacing: 4) {
+                Text(subitem.texto)
+                    .font(.subheadline)
+                if subitem.revogado {
+                    SeloRevogadoView()
+                }
+            }
+            .padding(.top, 3)
         }
+        .padding(.leading, CGFloat(max(0, subitem.nivel - nivelDoCard - 1)) * 16)
+        .opacity(subitem.revogado ? 0.6 : 1)
+    }
+}
+
+/// Bolinha com o rótulo do dispositivo (§ 1º, I, a...). Quando o texto é mais
+/// largo que um círculo (números romanos longos, "Único"), estica em pílula.
+private struct MarcadorView: View {
+    let texto: String
+    let cor: Color
+    var corDoTexto: Color = .white
+    var lado: CGFloat = 36
+    var fonte: Font = .caption.bold()
+
+    var body: some View {
+        Text(texto)
+            .font(fonte)
+            .foregroundStyle(corDoTexto)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 6)
+            .frame(minWidth: lado, minHeight: lado)
+            .background(cor, in: Capsule())
+    }
+}
+
+private struct SeloRevogadoView: View {
+    var body: some View {
+        Text("Revogado")
+            .font(.caption2.bold())
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.red.opacity(0.15), in: Capsule())
+            .foregroundStyle(.red)
+    }
+}
+
+private extension ArtigoDispositivo {
+    /// Cabeçalho pequeno acima da bolinha. Alíneas e itens não têm: ficam
+    /// dentro do card do parágrafo/inciso, só com a bolinha.
+    var nomeDoTipo: String? {
+        switch tipo {
+        case "paragrafo": return "Parágrafo"
+        case "inciso": return "Inciso"
+        default: return nil
+        }
+    }
+
+    /// O que vai dentro da bolinha: "Parágrafo único" vira "Único" (o
+    /// cabeçalho acima já diz "Parágrafo") e "a)" vira "a".
+    var rotuloCompacto: String {
+        var rotulo = self.rotulo
+        if tipo == "paragrafo",
+           let prefixo = rotulo.range(of: "parágrafo ", options: [.anchored, .caseInsensitive, .diacriticInsensitive]) {
+            rotulo.removeSubrange(rotulo.startIndex..<prefixo.upperBound)
+            rotulo = rotulo.prefix(1).uppercased() + rotulo.dropFirst()
+        }
+        if tipo == "alinea", rotulo.hasSuffix(")") {
+            rotulo.removeLast()
+        }
+        return rotulo
+    }
+
+    var cor: Color {
+        switch tipo {
+        case "paragrafo": return .blue
+        case "inciso": return .teal
+        case "alinea": return .yellow
+        default: return .secondary
+        }
+    }
+
+    /// Texto branco em cima do amarelo não tem contraste — só ele muda.
+    var corDoTexto: Color {
+        tipo == "alinea" ? .black : .white
     }
 }
 
@@ -369,6 +450,20 @@ private enum BuscaTexto {
         }
 
         return menor
+    }
+}
+
+private extension View {
+    /// Por padrão o sistema esconde a barra de navegação inteira (botão voltar e
+    /// título) quando a busca ganha foco. Isso mantém o cabeçalho na tela.
+    /// Só existe a partir do iOS 17.1.
+    @ViewBuilder
+    func naoEsconderBarraNaBusca() -> some View {
+        if #available(iOS 17.1, *) {
+            self.searchPresentationToolbarBehavior(.avoidHidingContent)
+        } else {
+            self
+        }
     }
 }
 
