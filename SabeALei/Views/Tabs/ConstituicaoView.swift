@@ -302,6 +302,11 @@ struct ArtigoListView: View {
                         .padding(.bottom, 2)
                     }
                 }
+                // O `List` reserva ~22 pt acima de cada cabeçalho de seção. Entre os
+                // grupos isso é o que os separa; no primeiro, só afasta o título da
+                // navigation bar — e o deixa mais baixo do que ele fica quando é
+                // fixado no topo ao rolar.
+                .semEspacoAcima(grupo.id == grupos.first?.id)
             }
         }
         .listStyle(.plain)
@@ -416,4 +421,21 @@ struct TrechoCorrespondenteView: View {
     }
     .environment(AuthStore())
     .environment(FavoritosStore())
+}
+
+private extension View {
+    /// Tira o espaço que o `List` reserva acima da seção. Só existe a partir do
+    /// iOS 26 (`listSectionMargins`); antes disso o espaço padrão continua.
+    @ViewBuilder
+    func semEspacoAcima(_ aplicar: Bool) -> some View {
+        if aplicar {
+            if #available(iOS 26.0, *) {
+                self.listSectionMargins(.top, 0)
+            } else {
+                self
+            }
+        } else {
+            self
+        }
+    }
 }
