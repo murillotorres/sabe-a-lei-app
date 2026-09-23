@@ -15,43 +15,33 @@ struct LeiArtigosView: View {
     var mostrarSeletorParte: Bool = false
 
     @State private var parte: ParteConstitucional = .permanente
+    /// Artigos do livro aberto — só servem de base pra consulta por número.
     @State private var artigos: [Artigo] = []
+    /// O que a lista desenha, já agrupado (montado fora da MainActor): o livro
+    /// inteiro, e o resultado da consulta atual. O `body` só escolhe qual.
+    @State private var gruposTodos: [GrupoArtigos] = []
+    @State private var gruposBusca: [GrupoArtigos] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var loadedParte: ParteConstitucional?
 
     @State private var searchText = ""
-    @State private var searchResults: [Artigo] = []
     @State private var isSearchingRemote = false
     @State private var isSearchActive = false
     @FocusState private var isSearchFieldFocused: Bool
 
-    private var displayedArtigos: [Artigo] {
-        guard !searchText.isEmpty else { return artigos }
+    /// Só espaços = sem consulta, mostra o livro inteiro.
+    private var consultaVazia: Bool { searchText.allSatisfy(\.isWhitespace) }
 
-        // "5", "art 5", "art. 5" ou "a5" busca o artigo específico, não um texto solto.
-        if let numero = Self.numeroReferenciado(searchText) {
-            return artigos.filter { $0.numero == numero }
-        }
+    private var gruposExibidos: [GrupoArtigos] { consultaVazia ? gruposTodos : gruposBusca }
 
-        // Texto solto: busca no servidor, que olha também o conteúdo dos
-        // dispositivos (parágrafos/incisos/alíneas), não só o caput.
-        return searchResults
-    }
-
-    /// Reconhece referências a um artigo específico ("5", "art5", "art 5", "art. 5",
-    /// "a5", "103-A"...) e devolve o número normalizado, ou `nil` se o texto não for isso.
-    private static func numeroReferenciado(_ texto: String) -> String? {
-        let trimmed = texto.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        guard let match = trimmed.wholeMatch(of: /(?:art\.?|a\.?)?\s*(\d+)(?:-([a-zA-Z]))?/.ignoresCase()) else {
-            return nil
-        }
-
-        let numero = String(match.1)
-        guard let letra = match.2 else { return numero }
-        return "\(numero)-\(letra.uppercased())"
+    /// Identifica uma consulta: quando qualquer parte muda, o `.task(id:)`
+    /// cancela a busca anterior e começa a nova. `carregada` entra pra refazer
+    /// a consulta por número quando o livro termina de carregar (ou troca de parte).
+    private struct ConsultaBusca: Equatable {
+        let parte: ParteConstitucional
+        let carregada: ParteConstitucional?
+        let texto: String
     }
 
     /// Botão de busca da navigation bar. Nenhum `.buttonStyle` é aplicado
@@ -69,10 +59,43 @@ struct LeiArtigosView: View {
         .accessibilityLabel("Pesquisar")
     }
 
+    /// Botão de fechar a busca. Diferente do `botaoDeBusca`, este não é um
+    /// `ToolbarItem` — vive no `safeAreaInset` junto do campo, então o sistema
+    /// não aplica o vidro automaticamente; precisa do `.buttonStyle(.glass)`
+    /// manual pra ficar com a mesma aparência.
+    @ViewBuilder
+    private var botaoFecharBusca: some View {
+        if #available(iOS 26.0, *) {
+            Button(action: cancelarBusca) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Cancelar busca")
+        } else {
+            Button(action: cancelarBusca) {
+                Image(systemName: "xmark")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Cancelar busca")
+        }
+    }
+
     private func ativarBusca() {
-        isSearchFieldFocused = true
+        // Aqui só entra o campo em cena (nav bar some, campo aparece, animado).
+        // O foco/teclado fica de fora de propósito: quem pede é o próprio
+        // `BuscaNaBarraView`, num ciclo posterior — ver o comentário lá.
+        BuscaMetricas.toqueNoBotao()
         withAnimation(.snappy(duration: 0.25)) {
             isSearchActive = true
+        }
+    }
+
+    private func cancelarBusca() {
+        isSearchFieldFocused = false
+        searchText = ""
+        withAnimation(.snappy(duration: 0.25)) {
+            isSearchActive = false
         }
     }
 
@@ -90,40 +113,45 @@ struct LeiArtigosView: View {
 
             content
         }
-        // Voltar e título ficam 100% nativos (navigation bar do sistema) — no
-        // iOS 26 isso já dá o botão voltar no estilo "Liquid Glass" padrão,
-        // sem precisar recriar nada na mão.
+        // Voltar fica 100% nativo (navigation bar do sistema) — no iOS 26
+        // isso já dá o botão no estilo "Liquid Glass" padrão, sem precisar
+        // recriar nada na mão.
         .navigationTitle(titulo)
         .navigationBarTitleDisplayMode(.inline)
-        // O botão de busca é próprio (não `.searchable`) pra ficar na mesma
-        // navigation bar do voltar: a partir do iOS 26, `.searchable` sem
-        // placement customizado passou a ancorar um campo flutuante no
-        // rodapé da tela (padrão novo do sistema), separado do voltar.
+        // Durante a busca, a nav bar nativa inteira some e dá lugar ao
+        // `safeAreaInset` abaixo. Tentei colocar o campo direto num
+        // `ToolbarItem(.principal)` antes, mas campos de texto dentro da
+        // toolbar passam pela ponte com UIKit e não pedem foco de forma
+        // confiável — o teclado às vezes simplesmente não abria. Uma view
+        // SwiftUI "normal" (fora da toolbar) não tem esse problema.
+        .toolbar(isSearchActive ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                botaoDeBusca
+            if !isSearchActive {
+                ToolbarItem(placement: .topBarTrailing) {
+                    botaoDeBusca
+                }
             }
         }
-        // O campo de busca some assim que ativado, no lugar de qualquer
-        // outro conteúdo fixo — a localização estrutural (Parte/Título/
-        // Capítulo) não é mais um header separado aqui: é o cabeçalho nativo
-        // de cada `Section` da lista (ver `ArtigoListView`), do mesmo jeito
-        // que o índice alfabético do app Contatos fica fixo ao rolar, sem
-        // nenhum background próprio — por isso não cria emenda com a nav bar.
         .safeAreaInset(edge: .top) {
             if isSearchActive {
-                CampoBuscaHeaderView(searchText: $searchText, isSearchFieldFocused: $isSearchFieldFocused) {
-                    isSearchActive = false
-                    searchText = ""
-                    isSearchFieldFocused = false
+                HStack(spacing: 12) {
+                    BuscaNaBarraView(searchText: $searchText, isSearchFieldFocused: $isSearchFieldFocused)
+                    botaoFecharBusca
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.bar, ignoresSafeAreaEdges: .top)
+                .transition(.opacity)
             }
         }
         .task(id: parte) {
             await load()
         }
-        .task(id: "\(parte.rawValue)|\(searchText)") {
-            await search()
+        // Uma consulta por vez: mudou o texto (ou a parte), a anterior é
+        // cancelada — inclusive a requisição em andamento. Fechar a busca
+        // zera o texto, então cancela também; sair da tela cancela sozinho.
+        .task(id: ConsultaBusca(parte: parte, carregada: loadedParte, texto: searchText)) {
+            await buscar()
         }
     }
 
@@ -143,46 +171,73 @@ struct LeiArtigosView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if isSearchingRemote && searchResults.isEmpty {
+        } else if isSearchingRemote && gruposBusca.isEmpty {
             ProgressView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if !searchText.isEmpty && displayedArtigos.isEmpty {
+        } else if !consultaVazia && gruposExibidos.isEmpty {
             ContentUnavailableView.search(text: searchText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ArtigoListView(artigos: displayedArtigos)
+            ArtigoListView(grupos: gruposExibidos)
         }
     }
 
-    /// Busca no servidor com debounce: só dispara a requisição depois que o
-    /// usuário pausa a digitação, e descarta o resultado se o texto já tiver
-    /// mudado (ou virado uma referência a artigo) nesse meio-tempo.
-    private func search() async {
-        guard !searchText.isEmpty, Self.numeroReferenciado(searchText) == nil else {
-            searchResults = []
+    /// Consulta só o livro aberto (o servidor recebe o slug da lei; a consulta
+    /// por número olha só `artigos`, que já são os desse livro). Nada pesado
+    /// roda na MainActor: rede, decode, filtro e agrupamento acontecem fora
+    /// dela, e só o resultado final é publicado aqui.
+    private func buscar() async {
+        let consulta = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !consulta.isEmpty else {
             isSearchingRemote = false
+            if !gruposBusca.isEmpty { gruposBusca = [] }
             return
         }
 
+        // "5", "art 5", "art. 5" ou "a5" busca o artigo específico, não um texto
+        // solto: consulta local e instantânea, sem debounce.
+        if let numero = BuscaLei.numeroReferenciado(consulta) {
+            let inicio = ContinuousClock.now
+            let grupos = await BuscaLei.porNumero(numero, em: artigos)
+            guard !Task.isCancelled else { return }
+            gruposBusca = grupos
+            isSearchingRemote = false
+            BuscaMetricas.buscaExecutada(
+                origem: "número", consulta: consulta, pesquisados: artigos.count,
+                resultados: grupos.reduce(0) { $0 + $1.artigos.count }, duracao: .now - inicio
+            )
+            return
+        }
+
+        // Texto solto: debounce (só dispara depois que a digitação pausa) e busca
+        // no servidor, que olha também o conteúdo dos dispositivos
+        // (parágrafos/incisos/alíneas), não só o caput.
         do {
-            try await Task.sleep(nanoseconds: 300_000_000)
+            try await Task.sleep(for: .milliseconds(250))
         } catch {
             return
         }
 
         isSearchingRemote = true
+        let inicioDaRequisicao = ContinuousClock.now
 
-        let resultado: [Artigo]
+        let encontrados: [Artigo]
         do {
-            let response = try await LeisService.artigos(leiSlug: leiSlug, parte: parte, busca: searchText)
-            resultado = response.artigos
+            encontrados = try await LeisService.artigos(leiSlug: leiSlug, parte: parte, busca: consulta).artigos
         } catch {
-            resultado = []
+            encontrados = []
         }
 
         guard !Task.isCancelled else { return }
-        searchResults = resultado
+        let grupos = await BuscaLei.agrupar(encontrados)
+        guard !Task.isCancelled else { return }
+
+        gruposBusca = grupos
         isSearchingRemote = false
+        BuscaMetricas.buscaExecutada(
+            origem: "texto", consulta: consulta, pesquisados: artigos.count,
+            resultados: encontrados.count, duracao: .now - inicioDaRequisicao
+        )
     }
 
     private func load(force: Bool = false) async {
@@ -194,11 +249,16 @@ struct LeiArtigosView: View {
 
         do {
             let response = try await LeisService.artigos(leiSlug: leiSlug, parte: parte)
+            let grupos = await BuscaLei.agrupar(response.artigos)
+            guard !Task.isCancelled else { return }
             artigos = response.artigos
+            gruposTodos = grupos
             loadedParte = parte
         } catch let error as APIError {
             errorMessage = error.errorDescription
         } catch {
+            // Trocar de parte cancela a carga anterior — isso não é um erro.
+            guard !Task.isCancelled else { return }
             errorMessage = "Não foi possível completar a solicitação."
         }
     }
@@ -213,7 +273,9 @@ struct LeiArtigosView: View {
 /// fundo natural da lista, igual à letra do índice — é isso que garante que
 /// não apareça nenhuma emenda visual durante a rolagem.
 struct ArtigoListView: View {
-    let artigos: [Artigo]
+    /// Já agrupados e prontos pra desenhar (ver `BuscaLei.agrupar`) — o `body`
+    /// não filtra, ordena nem reagrupa nada.
+    let grupos: [GrupoArtigos]
 
     @Environment(AuthStore.self) private var authStore
     @Environment(FavoritosStore.self) private var favoritosStore
@@ -221,21 +283,9 @@ struct ArtigoListView: View {
     /// `NavigationLink`, que sempre desenha a setinha de disclosure na List.
     @State private var artigoIdSelecionado: Int?
 
-    private var grupos: [(titulo: String?, descricao: String?, artigos: [Artigo])] {
-        var result: [(titulo: String?, descricao: String?, artigos: [Artigo])] = []
-        for artigo in artigos {
-            if !result.isEmpty && result[result.count - 1].titulo == artigo.grupoEstrutural {
-                result[result.count - 1].artigos.append(artigo)
-            } else {
-                result.append((artigo.grupoEstrutural, artigo.descricaoEstrutural, [artigo]))
-            }
-        }
-        return result
-    }
-
     var body: some View {
         List {
-            ForEach(Array(grupos.enumerated()), id: \.offset) { _, grupo in
+            ForEach(grupos) { grupo in
                 Section {
                     ForEach(grupo.artigos) { artigo in
                         Button {
@@ -262,7 +312,7 @@ struct ArtigoListView: View {
                     }
                 } header: {
                     if let titulo = grupo.titulo {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .center, spacing: 2) {
                             Text(titulo)
                             if let descricao = grupo.descricao {
                                 Text(descricao)
@@ -271,6 +321,8 @@ struct ArtigoListView: View {
                                     .textCase(nil)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .multilineTextAlignment(.center)
                         .padding(.bottom, 2)
                     }
                 }
@@ -278,10 +330,17 @@ struct ArtigoListView: View {
         }
         .listStyle(.plain)
         .navigationDestination(item: $artigoIdSelecionado) { id in
-            if let artigo = artigos.first(where: { $0.id == id }) {
+            if let artigo = artigo(id: id) {
                 ArtigoDetailView(artigoId: id, resumo: artigo)
             }
         }
+    }
+
+    private func artigo(id: Int) -> Artigo? {
+        for grupo in grupos {
+            if let artigo = grupo.artigos.first(where: { $0.id == id }) { return artigo }
+        }
+        return nil
     }
 
     private func alternarFavorito(_ artigo: Artigo) {
