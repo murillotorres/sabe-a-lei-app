@@ -14,8 +14,13 @@ struct LeiArtigosView: View {
     let titulo: String
     var mostrarSeletorParte: Bool = false
 
+    /// Quantos artigos vêm por requisição: os primeiros abrem o livro, e o resto
+    /// chega de tantos em tantos (ver `carregarProxima`).
+    private static let tamanhoDaPagina = 20
+
     @State private var parte: ParteConstitucional = .permanente
-    /// Artigos do livro aberto — só servem de base pra consulta por número.
+    /// Artigos do livro já carregados — só servem de base pra consulta por
+    /// número (o livro chega por páginas, então nem sempre estão todos aqui).
     @State private var artigos: [Artigo] = []
     /// O que a lista desenha, já agrupado (montado fora da MainActor): o livro
     /// inteiro, e o resultado da consulta atual. O `body` só escolhe qual.
@@ -24,6 +29,12 @@ struct LeiArtigosView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var loadedParte: ParteConstitucional?
+    /// Paginação do livro: o servidor ainda tem artigos depois dos carregados.
+    @State private var temMaisArtigos = false
+    @State private var isLoadingMais = false
+    @State private var falhaAoCarregarMais = false
+    /// Sobe a cada vez que o fim da lista pede mais artigos (dispara o `.task`).
+    @State private var pedidosDeMais = 0
 
     @State private var searchText = ""
     @State private var isSearchingRemote = false
@@ -42,6 +53,13 @@ struct LeiArtigosView: View {
         let parte: ParteConstitucional
         let carregada: ParteConstitucional?
         let texto: String
+    }
+
+    /// Identifica um pedido de mais artigos. A `parte` entra pra que trocar de
+    /// parte cancele o pedido em andamento.
+    private struct PedidoDeMais: Equatable {
+        let parte: ParteConstitucional
+        let numero: Int
     }
 
     /// Botão de busca da navigation bar. Nenhum `.buttonStyle` é aplicado
@@ -123,6 +141,11 @@ struct LeiArtigosView: View {
         .task(id: parte) {
             await load()
         }
+        // Fim da lista chegou à tela: carrega o próximo lote de artigos.
+        .task(id: PedidoDeMais(parte: parte, numero: pedidosDeMais)) {
+            guard pedidosDeMais > 0 else { return }
+            await carregarProxima()
+        }
         // Uma consulta por vez: mudou o texto (ou a parte), a anterior é
         // cancelada — inclusive a requisição em andamento. Fechar a busca
         // zera o texto, então cancela também; sair da tela cancela sozinho.
@@ -154,7 +177,13 @@ struct LeiArtigosView: View {
             ContentUnavailableView.search(text: searchText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ArtigoListView(grupos: gruposExibidos)
+            ArtigoListView(
+                grupos: gruposExibidos,
+                // Durante uma consulta a lista é o resultado dela, não o livro em páginas.
+                temMais: consultaVazia && temMaisArtigos,
+                falhouAoCarregarMais: falhaAoCarregarMais,
+                aoChegarNoFim: { pedidosDeMais += 1 }
+            )
         }
     }
 
@@ -174,7 +203,18 @@ struct LeiArtigosView: View {
         // solto: consulta local e instantânea, sem debounce.
         if let numero = BuscaLei.numeroReferenciado(consulta) {
             let inicio = ContinuousClock.now
-            let grupos = await BuscaLei.porNumero(numero, em: artigos)
+            var grupos = await BuscaLei.porNumero(numero, em: artigos)
+
+            // O livro chega por páginas: se o artigo ainda não está na memória,
+            // pergunta ao servidor. O filtro local repete o do servidor de
+            // propósito — uma versão da API sem o parâmetro devolveria o livro todo.
+            if grupos.isEmpty, temMaisArtigos {
+                isSearchingRemote = true
+                let encontrados = (try? await LeisService.artigos(leiSlug: leiSlug, parte: parte, numero: numero).artigos) ?? []
+                guard !Task.isCancelled else { return }
+                grupos = await BuscaLei.porNumero(numero, em: encontrados)
+            }
+
             guard !Task.isCancelled else { return }
             gruposBusca = grupos
             isSearchingRemote = false
@@ -217,18 +257,34 @@ struct LeiArtigosView: View {
     }
 
     private func load(force: Bool = false) async {
-        if !force && loadedParte == parte { return }
+        if force || loadedParte != parte {
+            await carregarPrimeiraPagina()
+        }
 
+        // Segundo lote, automático e em segundo plano, assim que o primeiro
+        // termina — o usuário já tem o que ler e a lista cresce por baixo. Só
+        // roda enquanto o que temos é a primeira página; dali em diante os
+        // lotes vêm quando o fim da lista aparece.
+        if loadedParte == parte, temMaisArtigos, artigos.count <= Self.tamanhoDaPagina {
+            await carregarProxima()
+        }
+    }
+
+    private func carregarPrimeiraPagina() async {
         isLoading = true
         errorMessage = nil
+        isLoadingMais = false
+        falhaAoCarregarMais = false
         defer { isLoading = false }
 
         do {
-            let response = try await LeisService.artigos(leiSlug: leiSlug, parte: parte)
+            let response = try await LeisService.artigos(leiSlug: leiSlug, parte: parte, limite: Self.tamanhoDaPagina)
             let grupos = await BuscaLei.agrupar(response.artigos)
             guard !Task.isCancelled else { return }
             artigos = response.artigos
             gruposTodos = grupos
+            // Sem `paginacao` a resposta já é o livro inteiro (servidor sem paginação).
+            temMaisArtigos = response.paginacao?.temMais ?? false
             loadedParte = parte
         } catch let error as APIError {
             errorMessage = error.errorDescription
@@ -236,6 +292,35 @@ struct LeiArtigosView: View {
             // Trocar de parte cancela a carga anterior — isso não é um erro.
             guard !Task.isCancelled else { return }
             errorMessage = "Não foi possível completar a solicitação."
+        }
+    }
+
+    /// Carrega o próximo lote e o junta ao que já está na lista. Uma requisição
+    /// por vez: pedidos que chegam enquanto outro está em andamento são ignorados.
+    private func carregarProxima() async {
+        guard temMaisArtigos, !isLoadingMais, loadedParte == parte else { return }
+
+        isLoadingMais = true
+        falhaAoCarregarMais = false
+        let parteDaRequisicao = parte
+        defer {
+            if parte == parteDaRequisicao { isLoadingMais = false }
+        }
+
+        do {
+            let response = try await LeisService.artigos(
+                leiSlug: leiSlug, parte: parte, limite: Self.tamanhoDaPagina, deslocamento: artigos.count
+            )
+            let todos = artigos + response.artigos
+            // Reagrupa tudo: o último grupo do lote anterior pode continuar neste.
+            let grupos = await BuscaLei.agrupar(todos)
+            guard !Task.isCancelled, parte == parteDaRequisicao else { return }
+            artigos = todos
+            gruposTodos = grupos
+            temMaisArtigos = response.paginacao?.temMais ?? false
+        } catch {
+            guard !Task.isCancelled else { return }
+            falhaAoCarregarMais = true
         }
     }
 }
@@ -252,6 +337,11 @@ struct ArtigoListView: View {
     /// Já agrupados e prontos pra desenhar (ver `BuscaLei.agrupar`) — o `body`
     /// não filtra, ordena nem reagrupa nada.
     let grupos: [GrupoArtigos]
+    /// Ainda há artigos por carregar depois dos que estão na lista.
+    var temMais = false
+    var falhouAoCarregarMais = false
+    /// Chamado quando o fim da lista chega à tela: pede o próximo lote.
+    var aoChegarNoFim: () -> Void = {}
 
     @Environment(AuthStore.self) private var authStore
     @Environment(FavoritosStore.self) private var favoritosStore
@@ -308,6 +398,10 @@ struct ArtigoListView: View {
                 // fixado no topo ao rolar.
                 .semEspacoAcima(grupo.id == grupos.first?.id)
             }
+
+            if temMais {
+                rodapeDeCarregamento
+            }
         }
         .listStyle(.plain)
         .navigationDestination(item: $artigoIdSelecionado) { id in
@@ -315,6 +409,25 @@ struct ArtigoListView: View {
                 ArtigoDetailView(artigoId: id, resumo: artigo)
             }
         }
+    }
+
+    /// Última linha da lista enquanto houver mais artigos: quando ela aparece, o
+    /// usuário chegou ao fim do que está carregado e o próximo lote é pedido. O
+    /// `id` muda a cada lote pra linha ser recriada — se ela continuar na tela
+    /// depois da carga (lote curto), o `onAppear` dispara de novo.
+    private var rodapeDeCarregamento: some View {
+        Group {
+            if falhouAoCarregarMais {
+                Button("Não foi possível carregar mais. Tentar novamente", action: aoChegarNoFim)
+                    .font(.subheadline)
+            } else {
+                ProgressView()
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .listRowSeparator(.hidden)
+        .id(grupos.reduce(0) { $0 + $1.artigos.count })
+        .onAppear(perform: aoChegarNoFim)
     }
 
     private func artigo(id: Int) -> Artigo? {

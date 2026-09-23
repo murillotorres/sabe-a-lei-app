@@ -12,6 +12,10 @@ use App\Models\Lei;
 
 final class LeisController
 {
+    /// Teto de artigos por página — evita que um `limit` enorme reproduza, na
+    /// prática, a resposta do livro inteiro.
+    private const LIMITE_MAXIMO_POR_PAGINA = 100;
+
     public function categorias(Request $request): void
     {
         Response::json(['categorias' => Categoria::all()]);
@@ -47,17 +51,67 @@ final class LeisController
 
         $busca = trim((string) $request->query('q', ''));
 
-        $registros = $busca === ''
-            ? Artigo::listByLei((int) $lei['id'], $parte)
-            : Artigo::search((int) $lei['id'], $parte, $busca);
+        // Busca por texto sempre olha o livro inteiro (a relevância é calculada
+        // sobre todos os artigos), então não é paginada.
+        if ($busca !== '') {
+            $registros = Artigo::search((int) $lei['id'], $parte, $busca);
 
-        $artigos = array_map(fn (array $a) => $this->formatArtigo($a), $registros);
+            Response::json([
+                'lei' => $lei,
+                'parte' => $parte,
+                'artigos' => array_map(fn (array $a) => $this->formatArtigo($a), $registros),
+            ]);
+        }
+
+        $numero = trim((string) $request->query('numero', ''));
+        $numero = $numero === '' ? null : $numero;
+
+        $limit = $this->inteiroPositivo($request->query('limit'), 'limit');
+        $offset = $this->inteiroPositivo($request->query('offset'), 'offset', minimo: 0) ?? 0;
+
+        // Sem `limit` a resposta é o livro inteiro, como antes da paginação — é
+        // o que mantém funcionando as versões do app que ainda não paginam.
+        if ($limit === null) {
+            $registros = Artigo::listByLei((int) $lei['id'], $parte, numero: $numero);
+
+            Response::json([
+                'lei' => $lei,
+                'parte' => $parte,
+                'artigos' => array_map(fn (array $a) => $this->formatArtigo($a), $registros),
+            ]);
+        }
+
+        $limit = min($limit, self::LIMITE_MAXIMO_POR_PAGINA);
+
+        // Pede um a mais só pra saber se ainda há o que carregar, sem um COUNT à parte.
+        $registros = Artigo::listByLei((int) $lei['id'], $parte, $limit + 1, $offset, $numero);
+        $temMais = count($registros) > $limit;
 
         Response::json([
             'lei' => $lei,
             'parte' => $parte,
-            'artigos' => $artigos,
+            'artigos' => array_map(fn (array $a) => $this->formatArtigo($a), array_slice($registros, 0, $limit)),
+            'paginacao' => [
+                'limit' => $limit,
+                'offset' => $offset,
+                'temMais' => $temMais,
+            ],
         ]);
+    }
+
+    /// Lê um parâmetro inteiro opcional da query: `null` se ausente, 422 se
+    /// vier algo que não seja um inteiro `>= $minimo`.
+    private function inteiroPositivo(mixed $valor, string $nome, int $minimo = 1): ?int
+    {
+        if ($valor === null || $valor === '') {
+            return null;
+        }
+
+        if (filter_var($valor, FILTER_VALIDATE_INT, ['options' => ['min_range' => $minimo]]) === false) {
+            Response::error("Parâmetro {$nome} inválido. Use um inteiro maior ou igual a {$minimo}.", 422);
+        }
+
+        return (int) $valor;
     }
 
     /// Busca em todas as leis cadastradas (aba Buscar) — ao contrário de

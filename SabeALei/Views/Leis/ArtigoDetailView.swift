@@ -216,22 +216,33 @@ struct DispositivoCardView: View {
 
     private var dispositivo: ArtigoDispositivo { bloco.principal }
 
+    /// Rótulo pequeno do tipo do dispositivo ("PARÁGRAFO", "INCISO").
+    private func cabecalho(_ texto: String, linhas: Int = 1) -> some View {
+        Text(texto)
+            .font(.system(size: fonteDoTipo, weight: .bold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .multilineTextAlignment(.center)
+            .lineLimit(linhas)
+            .minimumScaleFactor(0.7)
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 4) {
-                if let tipo = dispositivo.nomeDoTipo {
-                    Text(tipo)
-                        .font(.system(size: fonteDoTipo, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .textCase(.uppercase)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                if dispositivo.ehParagrafoUnico {
+                    // Sem número pra mostrar: só o rótulo, em duas linhas, sem bolinha.
+                    cabecalho("Parágrafo\núnico", linhas: 2)
+                } else {
+                    if let tipo = dispositivo.nomeDoTipo {
+                        cabecalho(tipo)
+                    }
+                    MarcadorView(
+                        texto: dispositivo.rotuloCompacto,
+                        cor: dispositivo.cor,
+                        corDoTexto: dispositivo.corDoTexto
+                    )
                 }
-                MarcadorView(
-                    texto: dispositivo.rotuloCompacto,
-                    cor: dispositivo.cor,
-                    corDoTexto: dispositivo.corDoTexto
-                )
             }
             .frame(width: 60)
 
@@ -339,8 +350,14 @@ private extension ArtigoDispositivo {
         }
     }
 
-    /// O que vai dentro da bolinha: "Parágrafo único" vira "Único" (o
-    /// cabeçalho acima já diz "Parágrafo") e "a)" vira "a".
+    /// "Parágrafo único" não tem número: o card mostra só o rótulo, sem bolinha.
+    var ehParagrafoUnico: Bool {
+        tipo == "paragrafo"
+            && rotulo.range(of: "único", options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    }
+
+    /// O que vai dentro da bolinha: "Parágrafo 1º" perde o "Parágrafo " (o
+    /// cabeçalho acima já diz) e "a)" vira "a".
     var rotuloCompacto: String {
         var rotulo = self.rotulo
         if tipo == "paragrafo",

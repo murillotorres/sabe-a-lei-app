@@ -5,20 +5,52 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Core\Database;
+use PDO;
 
 final class Artigo
 {
-    public static function listByLei(int $leiId, string $parte): array
-    {
-        $stmt = Database::connection()->prepare(
-            'SELECT id, parte, numero, titulo_estrutural, capitulo_estrutural,
-                    secao_estrutural, subsecao_estrutural, descricao_estrutural,
-                    rubrica, caput, revogado, ordem
-             FROM artigos
-             WHERE lei_id = :lei_id AND parte = :parte
-             ORDER BY ordem'
-        );
-        $stmt->execute(['lei_id' => $leiId, 'parte' => $parte]);
+    /// Artigos de uma lei/parte, em ordem de leitura. Sem `$limit`, devolve todos
+    /// (usado pela busca, que precisa pontuar o livro inteiro); com `$limit`,
+    /// devolve só essa "página" a partir de `$offset`. `$numero` restringe ao
+    /// artigo com esse número exato (ex.: "150", "103-A").
+    public static function listByLei(
+        int $leiId,
+        string $parte,
+        ?int $limit = null,
+        int $offset = 0,
+        ?string $numero = null,
+    ): array {
+        $sql = 'SELECT id, parte, numero, titulo_estrutural, capitulo_estrutural,
+                       secao_estrutural, subsecao_estrutural, descricao_estrutural,
+                       rubrica, caput, revogado, ordem
+                FROM artigos
+                WHERE lei_id = :lei_id AND parte = :parte';
+
+        if ($numero !== null) {
+            $sql .= ' AND numero = :numero';
+        }
+
+        $sql .= ' ORDER BY ordem';
+
+        if ($limit !== null) {
+            $sql .= ' LIMIT :limit OFFSET :offset';
+        }
+
+        $stmt = Database::connection()->prepare($sql);
+        $stmt->bindValue(':lei_id', $leiId, PDO::PARAM_INT);
+        $stmt->bindValue(':parte', $parte, PDO::PARAM_STR);
+
+        if ($numero !== null) {
+            $stmt->bindValue(':numero', $numero, PDO::PARAM_STR);
+        }
+
+        // Com prepares nativos (ver Database), LIMIT/OFFSET só aceitam inteiros de verdade.
+        if ($limit !== null) {
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        }
+
+        $stmt->execute();
 
         return $stmt->fetchAll();
     }

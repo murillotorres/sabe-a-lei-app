@@ -82,6 +82,16 @@ struct ArtigosResponse: Decodable {
     let lei: Lei
     let parte: String
     let artigos: [Artigo]
+    /// Só vem quando a requisição pediu paginação (`limit`). Ausente = a
+    /// resposta já é o livro inteiro (busca, ou servidor sem paginação).
+    let paginacao: Paginacao?
+}
+
+struct Paginacao: Decodable, Equatable {
+    let limit: Int
+    let offset: Int
+    /// Ainda há artigos depois desta página.
+    let temMais: Bool
 }
 
 /// Resposta da busca global (/busca) — ao contrário de `ArtigosResponse`, não
