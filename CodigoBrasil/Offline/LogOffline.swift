@@ -1,10 +1,10 @@
 import OSLog
 
 /// Logs do armazenamento offline e da sincronização. No Console, filtrar por
-/// subsystem `com.murillotorres.sabealei` e category `Offline`. Só eventos
+/// subsystem `com.murillotorres.codigobrasil` e category `Offline`. Só eventos
 /// principais em nível `info`; o resto em `debug` (não persiste em produção).
 enum LogOffline {
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "SabeALei", category: "Offline")
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "CodigoBrasil", category: "Offline")
 
     /// Download e armazenamento de livros.
     static func offline(_ mensagem: String) {

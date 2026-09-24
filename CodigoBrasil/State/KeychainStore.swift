@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    private static let service = "com.murillotorres.sabealei.auth"
+    private static let service = "com.murillotorres.codigobrasil.auth"
     private static let account = "authToken"
 
     static func saveToken(_ token: String) {

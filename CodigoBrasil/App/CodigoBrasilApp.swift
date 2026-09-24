@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct SabeALeiApp: App {
+struct CodigoBrasilApp: App {
     @State private var authStore = AuthStore()
     @State private var favoritosStore = FavoritosStore()
     @State private var armazenamento = ArmazenamentoOffline()

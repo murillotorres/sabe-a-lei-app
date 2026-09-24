@@ -1,2 +1,2 @@
-# sabe-a-lei-app
-Sabe a Lei - Vade Mecum digital para iOS
+# codigobrasil-app
+Código Brasil - Vade Mecum digital para iOS

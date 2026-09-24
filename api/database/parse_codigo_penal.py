@@ -390,7 +390,7 @@ def sql_str(v):
 
 def emitir_sql(artigos: list):
     out = sys.stdout
-    out.write("-- Sabe a Lei — seed: Código Penal (Decreto-Lei nº 2.848/1940)\n")
+    out.write("-- Código Brasil — seed: Código Penal (Decreto-Lei nº 2.848/1940)\n")
     out.write("-- Gerado a partir de https://www.planalto.gov.br/ccivil_03/decreto-lei/del2848compilado.htm\n")
     out.write("-- Idempotente: apaga e recria os dados desta lei (categoria_id/lei_id fixos) a cada execução.\n\n")
 

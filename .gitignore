@@ -19,4 +19,4 @@ api/database/parse_stats*.txt
 .claude/
 
 # Local signing config (Apple Developer Team ID) — copy Local.xcconfig.example
-SabeALei/Config/Local.xcconfig
+CodigoBrasil/Config/Local.xcconfig

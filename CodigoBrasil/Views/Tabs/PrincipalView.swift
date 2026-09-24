@@ -11,7 +11,7 @@ struct PrincipalView: View {
                         Image(systemName: "book.closed.fill")
                             .font(.system(size: 48))
                             .foregroundStyle(.tint)
-                        Text("Sabe a Lei")
+                        Text("Código Brasil")
                             .font(.largeTitle.bold())
                         Text("Vade mecum digital")
                             .font(.subheadline)

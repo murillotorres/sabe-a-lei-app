@@ -1,4 +1,4 @@
--- Sabe a Lei — versionamento das leis para o armazenamento offline do app.
+-- Código Brasil — versionamento das leis para o armazenamento offline do app.
 -- Idempotente (CREATE TABLE IF NOT EXISTS). Aplicar no banco de cada ambiente:
 --   mysql sabe_a_lei < database/migrations/001_versionamento_offline.sql
 -- Depois, publicar a versão inicial de cada lei:

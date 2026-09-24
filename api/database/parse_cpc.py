@@ -351,7 +351,7 @@ def sql_str(v):
 
 def emitir_sql(artigos: list):
     out = sys.stdout
-    out.write("-- Sabe a Lei — seed: Código de Processo Civil (Lei nº 13.105/2015)\n")
+    out.write("-- Código Brasil — seed: Código de Processo Civil (Lei nº 13.105/2015)\n")
     out.write("-- Gerado a partir de https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm\n")
     out.write("-- Idempotente: apaga e recria os dados desta lei (categoria_id/lei_id fixos) a cada execução.\n\n")
 

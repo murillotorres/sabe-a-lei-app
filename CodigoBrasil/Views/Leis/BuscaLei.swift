@@ -197,10 +197,10 @@ import UIKit
 /// Medições da abertura e do uso da busca — só em DEBUG. Ajudam a ver onde o
 /// tempo vai (ver o relatório Fence-hang): toque → campo inserido → foco
 /// solicitado → teclado. Filtrar no Console por subsystem
-/// `com.murillotorres.sabealei`, category `Busca`.
+/// `com.murillotorres.codigobrasil`, category `Busca`.
 @MainActor
 enum BuscaMetricas {
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "SabeALei", category: "Busca")
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "CodigoBrasil", category: "Busca")
     private static var toque: ContinuousClock.Instant?
 
     private static var observadoresDoTeclado: [any NSObjectProtocol] = []

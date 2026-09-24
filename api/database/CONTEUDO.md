@@ -265,7 +265,7 @@ existiam nos dados publicados, não relacionados à feature nova:
 - **Outros Códigos** (Processo Penal, Tributário Nacional, etc.) e **Estatutos** (ECA,
   Idoso, etc.) — sem cards na Biblioteca por enquanto (os cards "Códigos", "Estatutos" e
   "Todas as Leis" foram removidos da grade a pedido; as telas placeholder ainda existem em
-  `SabeALei/Views/Tabs/` mas não são mais navegáveis).
+  `CodigoBrasil/Views/Tabs/` mas não são mais navegáveis).
 - Categoria `estatutos` ainda não existe na tabela `categorias`.
 - **Constituição não tem `descricao_estrutural`/`rubrica` preenchidos** (ficam `NULL` em
   todas as suas 412 linhas) — o parser original (`parse_constituicao.py`) não está neste
