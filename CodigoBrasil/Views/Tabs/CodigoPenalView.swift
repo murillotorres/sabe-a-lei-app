@@ -6,9 +6,11 @@ import SwiftUI
 struct CodigoPenalView: View {
     /// Identifica o livro (também usado pela Biblioteca para saber se está baixado).
     static let slug = "codigo-penal-1940"
+    /// Título do livro (também usado pela busca da Biblioteca).
+    static let titulo = "Código Penal"
 
     var body: some View {
-        LeiArtigosView(leiSlug: Self.slug, titulo: "Código Penal")
+        LeiArtigosView(leiSlug: Self.slug, titulo: Self.titulo)
     }
 }
 

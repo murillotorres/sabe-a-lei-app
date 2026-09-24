@@ -3,9 +3,11 @@ import SwiftUI
 struct ConstituicaoView: View {
     /// Identifica o livro (também usado pela Biblioteca para saber se está baixado).
     static let slug = "constituicao-federal-1988"
+    /// Título do livro (também usado pela busca da Biblioteca).
+    static let titulo = "Constituição"
 
     var body: some View {
-        LeiArtigosView(leiSlug: Self.slug, titulo: "Constituição", mostrarSeletorParte: true)
+        LeiArtigosView(leiSlug: Self.slug, titulo: Self.titulo, mostrarSeletorParte: true)
     }
 }
 

@@ -15,11 +15,12 @@ enum MedidasDaBusca {
 struct BarraDeBuscaView: View {
     @Binding var searchText: String
     var isSearchFieldFocused: FocusState<Bool>.Binding
+    var prompt: String = "Buscar por número ou texto..."
     var fechar: @MainActor () -> Void
 
     var body: some View {
         HStack(spacing: MedidasDaBusca.margem) {
-            BuscaNaBarraView(searchText: $searchText, isSearchFieldFocused: isSearchFieldFocused)
+            BuscaNaBarraView(searchText: $searchText, isSearchFieldFocused: isSearchFieldFocused, prompt: prompt)
 
             // Fora de um `ToolbarItem` o sistema não desenha o vidro sozinho —
             // aqui ele é aplicado à mão, num círculo com o mesmo diâmetro do
@@ -52,12 +53,13 @@ struct BarraDeBuscaView: View {
 struct BuscaNaBarraView: View {
     @Binding var searchText: String
     var isSearchFieldFocused: FocusState<Bool>.Binding
+    var prompt: String = "Buscar por número ou texto..."
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Buscar por número ou texto...", text: $searchText)
+            TextField(prompt, text: $searchText)
                 .focused(isSearchFieldFocused)
                 .textFieldStyle(.plain)
                 // Busca jurídica: sem correção, sem maiúscula automática e sem

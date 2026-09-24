@@ -6,9 +6,11 @@ import SwiftUI
 struct CodigoProcessoCivilView: View {
     /// Identifica o livro (também usado pela Biblioteca para saber se está baixado).
     static let slug = "codigo-processo-civil-2015"
+    /// Título do livro (também usado pela busca da Biblioteca).
+    static let titulo = "Código de Processo Civil"
 
     var body: some View {
-        LeiArtigosView(leiSlug: Self.slug, titulo: "Código de Processo Civil")
+        LeiArtigosView(leiSlug: Self.slug, titulo: Self.titulo)
     }
 }
 
