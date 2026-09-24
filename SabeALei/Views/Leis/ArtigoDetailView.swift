@@ -144,7 +144,7 @@ struct ArtigoDetailView: View {
         defer { isLoading = false }
 
         do {
-            let response = try await LeisService.artigo(id: artigoId)
+            let response = try await RepositorioDeLivros.detalhe(artigoId: artigoId)
             artigo = response.artigo
             blocos = BlocoDispositivo.agrupar(response.dispositivos)
         } catch let error as APIError {
@@ -383,90 +383,6 @@ private extension ArtigoDispositivo {
     /// Texto branco em cima do amarelo não tem contraste — só ele muda.
     var corDoTexto: Color {
         tipo == "alinea" ? .black : .white
-    }
-}
-
-/// Pontuação de compatibilidade de um texto com as palavras buscadas — mesma
-/// lógica usada no backend para a busca geral da Constituição (ver
-/// `Artigo::pontuar` na API), reaproveitada aqui em Swift porque os
-/// dispositivos do artigo já estão todos carregados no dispositivo do usuário.
-private enum BuscaTexto {
-    static func normalizar(_ texto: String) -> String {
-        texto.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "pt_BR"))
-    }
-
-    static func tokenizar(_ consulta: String) -> [String] {
-        let normalizado = normalizar(consulta).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizado.isEmpty else { return [] }
-
-        var vistos = Set<String>()
-        return normalizado
-            .split(whereSeparator: { $0.isWhitespace })
-            .map(String.init)
-            .filter { vistos.insert($0).inserted }
-    }
-
-    static func pontuar(_ texto: String, tokens: [String]) -> Int {
-        guard !tokens.isEmpty else { return 0 }
-        let textoNormalizado = normalizar(texto)
-        let range = NSRange(textoNormalizado.startIndex..., in: textoNormalizado)
-
-        var posicoesPorToken: [Int: [Int]] = [:]
-        for (indice, token) in tokens.enumerated() {
-            guard let regex = try? NSRegularExpression(
-                pattern: "\\b\(NSRegularExpression.escapedPattern(for: token))\\b"
-            ) else { continue }
-
-            let posicoes = regex.matches(in: textoNormalizado, range: range).map(\.range.location)
-            if !posicoes.isEmpty {
-                posicoesPorToken[indice] = posicoes
-            }
-        }
-
-        let tokensEncontrados = posicoesPorToken.count
-        guard tokensEncontrados > 0 else { return 0 }
-
-        let totalOcorrencias = posicoesPorToken.values.reduce(0) { $0 + $1.count }
-        var pontuacao = tokensEncontrados * 100_000 + min(totalOcorrencias, 50)
-
-        if tokensEncontrados == tokens.count, let janela = menorJanela(posicoesPorToken) {
-            pontuacao += max(0, 50_000 - janela)
-        }
-
-        return pontuacao
-    }
-
-    /// Menor trecho que contém pelo menos uma ocorrência de cada palavra —
-    /// janela deslizante sobre as posições ordenadas de todos os tokens.
-    private static func menorJanela(_ posicoesPorToken: [Int: [Int]]) -> Int? {
-        var eventos: [(posicao: Int, token: Int)] = []
-        for (token, posicoes) in posicoesPorToken {
-            eventos.append(contentsOf: posicoes.map { (posicao: $0, token: token) })
-        }
-        eventos.sort { $0.posicao < $1.posicao }
-
-        let totalTokens = posicoesPorToken.count
-        var contagem: [Int: Int] = [:]
-        var distintos = 0
-        var menor: Int?
-        var esquerda = 0
-
-        for (posicao, token) in eventos {
-            contagem[token, default: 0] += 1
-            if contagem[token] == 1 { distintos += 1 }
-
-            while distintos == totalTokens {
-                let janela = posicao - eventos[esquerda].posicao
-                menor = min(menor ?? janela, janela)
-
-                let tokenEsquerda = eventos[esquerda].token
-                contagem[tokenEsquerda]! -= 1
-                if contagem[tokenEsquerda] == 0 { distintos -= 1 }
-                esquerda += 1
-            }
-        }
-
-        return menor
     }
 }
 

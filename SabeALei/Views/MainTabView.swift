@@ -44,4 +44,5 @@ struct MainTabView: View {
     MainTabView()
         .environment(AuthStore())
         .environment(FavoritosStore())
+        .environment(ArmazenamentoOffline())
 }

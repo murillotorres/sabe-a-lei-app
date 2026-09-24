@@ -29,6 +29,14 @@ struct PerfilView: View {
                     .padding(.vertical, 8)
                 }
 
+                Section {
+                    NavigationLink {
+                        ArmazenamentoView()
+                    } label: {
+                        Label("Armazenamento", systemImage: "internaldrive")
+                    }
+                }
+
                 if authStore.isAuthenticated {
                     Section {
                         NavigationLink {
@@ -65,4 +73,5 @@ struct PerfilView: View {
     PerfilView()
         .environment(AuthStore())
         .environment(FavoritosStore())
+        .environment(ArmazenamentoOffline())
 }

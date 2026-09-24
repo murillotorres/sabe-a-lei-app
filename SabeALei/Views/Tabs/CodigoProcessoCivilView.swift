@@ -4,8 +4,11 @@ import SwiftUI
 /// Constituição e dos outros códigos (lista agrupada, busca, favoritar), sem
 /// o seletor Texto Permanente/ADCT, que não existe nessa lei.
 struct CodigoProcessoCivilView: View {
+    /// Identifica o livro (também usado pela Biblioteca para saber se está baixado).
+    static let slug = "codigo-processo-civil-2015"
+
     var body: some View {
-        LeiArtigosView(leiSlug: "codigo-processo-civil-2015", titulo: "Código de Processo Civil")
+        LeiArtigosView(leiSlug: Self.slug, titulo: "Código de Processo Civil")
     }
 }
 

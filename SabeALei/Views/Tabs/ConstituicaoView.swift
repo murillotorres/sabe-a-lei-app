@@ -1,8 +1,11 @@
 import SwiftUI
 
 struct ConstituicaoView: View {
+    /// Identifica o livro (também usado pela Biblioteca para saber se está baixado).
+    static let slug = "constituicao-federal-1988"
+
     var body: some View {
-        LeiArtigosView(leiSlug: "constituicao-federal-1988", titulo: "Constituição", mostrarSeletorParte: true)
+        LeiArtigosView(leiSlug: Self.slug, titulo: "Constituição", mostrarSeletorParte: true)
     }
 }
 
@@ -17,6 +20,8 @@ struct LeiArtigosView: View {
     /// Quantos artigos vêm por requisição: os primeiros abrem o livro, e o resto
     /// chega de tantos em tantos (ver `carregarProxima`).
     private static let tamanhoDaPagina = 20
+
+    @Environment(ArmazenamentoOffline.self) private var armazenamento
 
     @State private var parte: ParteConstitucional = .permanente
     /// Artigos do livro já carregados — só servem de base pra consulta por
@@ -210,7 +215,7 @@ struct LeiArtigosView: View {
             // propósito — uma versão da API sem o parâmetro devolveria o livro todo.
             if grupos.isEmpty, temMaisArtigos {
                 isSearchingRemote = true
-                let encontrados = (try? await LeisService.artigos(leiSlug: leiSlug, parte: parte, numero: numero).artigos) ?? []
+                let encontrados = (try? await RepositorioDeLivros.porNumero(leiSlug: leiSlug, parte: parte, numero: numero)) ?? []
                 guard !Task.isCancelled else { return }
                 grupos = await BuscaLei.porNumero(numero, em: encontrados)
             }
@@ -239,7 +244,7 @@ struct LeiArtigosView: View {
 
         let encontrados: [Artigo]
         do {
-            encontrados = try await LeisService.artigos(leiSlug: leiSlug, parte: parte, busca: consulta).artigos
+            encontrados = try await RepositorioDeLivros.buscarTexto(leiSlug: leiSlug, parte: parte, consulta: consulta)
         } catch {
             encontrados = []
         }
@@ -278,7 +283,9 @@ struct LeiArtigosView: View {
         defer { isLoading = false }
 
         do {
-            let response = try await LeisService.artigos(leiSlug: leiSlug, parte: parte, limite: Self.tamanhoDaPagina)
+            let response = try await RepositorioDeLivros.pagina(
+                leiSlug: leiSlug, parte: parte, limite: Self.tamanhoDaPagina, deslocamento: 0
+            )
             let grupos = await BuscaLei.agrupar(response.artigos)
             guard !Task.isCancelled else { return }
             artigos = response.artigos
@@ -286,6 +293,8 @@ struct LeiArtigosView: View {
             // Sem `paginacao` a resposta já é o livro inteiro (servidor sem paginação).
             temMaisArtigos = response.paginacao?.temMais ?? false
             loadedParte = parte
+            // A tela já tem o que mostrar: só agora o download offline do livro pode começar (em segundo plano).
+            armazenamento.livroAberto(leiSlug)
         } catch let error as APIError {
             errorMessage = error.errorDescription
         } catch {
@@ -308,7 +317,7 @@ struct LeiArtigosView: View {
         }
 
         do {
-            let response = try await LeisService.artigos(
+            let response = try await RepositorioDeLivros.pagina(
                 leiSlug: leiSlug, parte: parte, limite: Self.tamanhoDaPagina, deslocamento: artigos.count
             )
             let todos = artigos + response.artigos
@@ -534,6 +543,7 @@ struct TrechoCorrespondenteView: View {
     }
     .environment(AuthStore())
     .environment(FavoritosStore())
+    .environment(ArmazenamentoOffline())
 }
 
 private extension View {

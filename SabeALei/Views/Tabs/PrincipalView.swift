@@ -49,6 +49,9 @@ struct HomeCardView: View {
     let titulo: String
     let icone: String
     var cor: Color = .accentColor
+    /// Quando informado, mostra à direita o símbolo de download: azul se o livro
+    /// já está no aparelho, apagado se não. `nil` = card sem o indicador.
+    var baixado: Bool?
 
     /// Lado do quadrado do ícone — a altura do card é travada nesse mesmo
     /// valor, senão o quadrado esticaria pra virar retângulo.
@@ -61,14 +64,23 @@ struct HomeCardView: View {
                 .foregroundStyle(.white)
                 .frame(width: ladoIcone, height: ladoIcone)
                 .background(cor)
+            // O título ocupa o espaço que sobra (em vez de um Spacer, que ainda somaria
+            // dois espaçamentos e comprimiria o texto quando há o indicador de download).
             Text(titulo)
                 .font(.headline)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Spacer(minLength: 0)
+                .minimumScaleFactor(baixado == nil ? 0.7 : 0.6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let baixado {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 16))
+                    .padding(.leading, -4)
+                    .foregroundStyle(baixado ? Color.blue : Color.secondary.opacity(0.45))
+                    .accessibilityLabel(baixado ? "Disponível offline" : "Não baixado")
+            }
         }
-        .padding(.trailing, 16)
+        .padding(.trailing, baixado == nil ? 16 : 12)
         .frame(maxWidth: .infinity, minHeight: ladoIcone, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -79,4 +91,5 @@ struct HomeCardView: View {
     PrincipalView()
         .environment(AuthStore())
         .environment(FavoritosStore())
+        .environment(ArmazenamentoOffline())
 }
