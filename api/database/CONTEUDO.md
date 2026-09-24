@@ -211,6 +211,73 @@ Título → Capítulo → Seção → Subseção, com `titulo_estrutural` = `'Pa
   não é um bug do parser, é assim que o Planalto publica; ver `parse_stats_cpc.txt` (não
   versionado) para os totais exatos de uma reexecução.
 
+## Código de Processo Penal, Código Tributário Nacional e Código Eleitoral
+
+Três leis importadas com o **motor compartilhado** `parse_planalto.py` (cada uma tem só um
+script fino com a configuração: `parse_cpp.py`, `parse_ctn.py`, `parse_codigo_eleitoral.py`).
+Uso: baixar o HTML (com `curl` e um User-Agent de navegador — sem ele o Planalto reseta a
+conexão), e rodar `python3 parse_x.py [--depurar] > seed_x.sql`. `--depurar` lista no stderr as
+linhas que nenhum padrão reconheceu, pra conferir que o parser não está engolindo texto de lei.
+
+| | Código de Processo Penal | Código Tributário Nacional | Código Eleitoral |
+|---|---|---|---|
+| **Lei** (`lei_id`) | `codigo-processo-penal-1941` (5) | `codigo-tributario-nacional-1966` (6) | `codigo-eleitoral-1965` (7) |
+| **Fonte** | `.../decreto-lei/del3689.htm` | `.../leis/l5172compilado.htm` | `.../leis/l4737compilado.htm` |
+| **HTML / Seed** | `cpp_raw.html` / `seed_cpp.sql` | `ctn_raw.html` / `seed_ctn.sql` | `ce_raw.html` / `seed_codigo_eleitoral.sql` |
+| **Artigos** | 853 (1 a 811 + 42 com sufixo, ex. `3-A`) | 245 (1 a 218 + 27 com sufixo) | 389 (1 a 383 + 6 com sufixo) |
+| **Dispositivos** | 1.294 | 567 | 919 |
+| **Revogados** | 44 | 23 | 20 |
+| **Hierarquia** | Livro › Título › Capítulo › Seção | Livro › Título › Capítulo › Seção | Parte › Título › Capítulo › Seção |
+| **`artigos.id`** | 4012–4864 | 4865–5109 | 5110–5498 |
+| **`artigo_dispositivos.id`** | 8450–9743 | 9744–10310 | 10311–11229 |
+
+Categoria `codigos` (mesma das demais), `parte = 'permanente'`, `rubrica = NULL` (nenhuma delas
+usa a convenção). Os ids encadeiam a partir do fim do CPC (4011 / 8449): reprocessar uma lei
+que muda o número de artigos/dispositivos exige recalcular os `*_id_inicial` das seguintes.
+
+### O que o motor faz diferente dos parsers antigos
+
+- **Texto riscado é descartado** (`<strike>` e `text-decoration: line-through`): no Planalto é a
+  redação antiga, já substituída. O CPP tem 742 trechos assim. Quando o **rótulo** de um
+  dispositivo revogado fica dentro do trecho riscado e só a nota "(Revogado pela Lei…)" sobra
+  (Art. 194 do CPP, por exemplo), o rótulo é preservado — sem isso o artigo sumiria da
+  numeração. O mesmo vale pra "(Suspensa a execução…)" (Art. 85, § 3º do CTN).
+- **Sufixo de letra depois do ordinal** (`Art. 3º-A`): o regex do Código Penal só aceitava antes.
+- **Ordinal em `<sup>o</sup>`** vira `º` ("nº 17", não "n o 17").
+- **Descrição de cabeçalho em várias linhas**, ignorando notas entre parênteses no meio
+  ("(Redação dada pela Lei nº X)"); também aceita a linha de descrição sem `align=center`.
+- **Numerais por extenso** nos cabeçalhos (`LIVRO PRIMEIRO` no CTN, `PARTE PRIMEIRA` no CE).
+- **Cabeçalhos sem numeral** ("Disposição preliminar", "Disposições finais e transitórias" no
+  CTN) viram o próprio `titulo_estrutural` dos artigos — configurável em `Lei.cabecalhos_sem_numeral`.
+- **Faixas revogadas** ("Arts. 52 a 58. (Revogados…)", "§§ 4º e 5º (Revogados…)") expandem em
+  um artigo/parágrafo por número.
+- **Tabelas** (CTN, Arts. 90 e 91): cada linha vira texto do dispositivo aberto, com as
+  células separadas por " — " e as linhas por "; ". Só existem duas, ambas históricas.
+- **Texto de lei quebrado em outro `<p>`** (começa em minúscula ou é frase completa, ex. a
+  fórmula do compromisso do jurado no Art. 472 do CPP) continua o dispositivo aberto em vez de
+  ser descartado. A linha "Pena – …" do Código Eleitoral entra pelo mesmo caminho.
+
+### Erros do próprio Planalto tratados
+
+`Il`/`Ill`/`Vl` com "l" minúsculo no lugar de "I" (incisos II, III, VI do CPP); `T ÍTULO`;
+`SeçãoI`; `At. 248`, `Ar. 337`, `Ar. 352`, `Ar. 373` (Código Eleitoral); `Art. 21 7.` (o Art.
+217 do CTN); `Leinº` (17 notas de emenda); `§. 2º`; `§ 6º B (VETADO)` sem hífen (Art. 135 do CE).
+
+### Limitações conhecidas
+
+- Mesma heurística de `revogado`/`vetado` das demais leis (regex no início do texto).
+- Notas órfãs entre parênteses ("(Incluído pela Lei nº X)") que acompanham um dispositivo
+  riscado são descartadas — é o caso dos §§ 1º e 2º do Art. 84 do CPP (riscados no Planalto,
+  com remissão à ADI 2.797).
+  Rótulos soltos sem nível ("Juiz das Garantias", antes do Art. 3º-A do CPP) também.
+- O CPP inclui os Arts. 3º-A a 3º-F (juiz das garantias), com as notas "(Vigência)" e "(Vide ADI
+  6.298)" no texto, porque o Planalto os publica assim.
+- `descricao_estrutural` sai em "sentence-case" (só a primeira letra maiúscula), como nas
+  demais leis — nomes próprios em título ("Do tribunal superior") perdem a caixa alta.
+- As linhas de tabela do CTN viram texto corrido; não há estrutura de tabela no schema.
+- Conferido: numeração sem lacunas nem duplicatas, contagem por nível e amostras de artigos
+  contra o HTML de origem. Não foi feita uma revisão artigo a artigo contra o texto oficial.
+
 ## Descrição de cabeçalho e rubrica de artigo
 
 Duas colunas novas em `artigos`, adicionadas depois das quatro leis acima já estarem no ar
@@ -262,9 +329,9 @@ existiam nos dados publicados, não relacionados à feature nova:
 
 ## Pendente (ainda não cadastrado)
 
-- **Outros Códigos** (Processo Penal, Tributário Nacional, etc.) e **Estatutos** (ECA,
-  Idoso, etc.) — sem cards na Biblioteca por enquanto (os cards "Códigos", "Estatutos" e
-  "Todas as Leis" foram removidos da grade a pedido; as telas placeholder ainda existem em
+- **Outros Códigos** (Defesa do Consumidor, Trânsito, etc.) e **Estatutos** (ECA, Idoso,
+  etc.) — sem cards na Biblioteca por enquanto (os cards "Códigos", "Estatutos" e "Todas as
+  Leis" foram removidos da grade a pedido; as telas placeholder ainda existem em
   `CodigoBrasil/Views/Tabs/` mas não são mais navegáveis).
 - Categoria `estatutos` ainda não existe na tabela `categorias`.
 - **Constituição não tem `descricao_estrutural`/`rubrica` preenchidos** (ficam `NULL` em
@@ -283,7 +350,13 @@ mysql -h <host> -u <user> -p < api/database/seed_constituicao.sql
 mysql -h <host> -u <user> -p < api/database/seed_codigo_civil.sql
 mysql -h <host> -u <user> -p < api/database/seed_codigo_penal.sql
 mysql -h <host> -u <user> -p < api/database/seed_cpc.sql
+mysql -h <host> -u <user> -p < api/database/seed_cpp.sql
+mysql -h <host> -u <user> -p < api/database/seed_ctn.sql
+mysql -h <host> -u <user> -p < api/database/seed_codigo_eleitoral.sql
 ```
+
+Depois de importar uma lei **nova**, publique a versão offline dela (ver `VERSIONAMENTO.md`):
+`php api/bin/publicar-versao.php --todas` (as leis já publicadas respondem "sem mudanças").
 
 Cada script cria as tabelas com `CREATE TABLE IF NOT EXISTS` e, antes de inserir, apaga
 apenas as linhas da sua própria lei (`DELETE ... WHERE lei_id = 1` ou `= 2`) — seguro

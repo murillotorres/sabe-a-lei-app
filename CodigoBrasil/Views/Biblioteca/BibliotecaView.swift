@@ -15,14 +15,15 @@ private enum CategoriaDaBiblioteca: CaseIterable {
 /// Livros da Biblioteca, na ordem em que aparecem. É o que a busca por título
 /// percorre.
 private enum Livro: CaseIterable, Identifiable {
-    case constituicao, codigoCivil, codigoPenal, codigoProcessoCivil
+    case constituicao, codigoCivil, codigoPenal, codigoProcessoCivil, codigoProcessoPenal, codigoTributarioNacional, codigoEleitoral
 
     var id: Self { self }
 
     var categoria: CategoriaDaBiblioteca {
         switch self {
         case .constituicao: .constituicao
-        case .codigoCivil, .codigoPenal, .codigoProcessoCivil: .codigosPrincipais
+        case .codigoCivil, .codigoPenal, .codigoProcessoCivil, .codigoProcessoPenal, .codigoTributarioNacional, .codigoEleitoral:
+            .codigosPrincipais
         }
     }
 
@@ -32,6 +33,9 @@ private enum Livro: CaseIterable, Identifiable {
         case .codigoCivil: CodigoCivilView.slug
         case .codigoPenal: CodigoPenalView.slug
         case .codigoProcessoCivil: CodigoProcessoCivilView.slug
+        case .codigoProcessoPenal: CodigoProcessoPenalView.slug
+        case .codigoTributarioNacional: CodigoTributarioNacionalView.slug
+        case .codigoEleitoral: CodigoEleitoralView.slug
         }
     }
 
@@ -42,6 +46,9 @@ private enum Livro: CaseIterable, Identifiable {
         case .codigoCivil: CodigoCivilView.titulo
         case .codigoPenal: CodigoPenalView.titulo
         case .codigoProcessoCivil: CodigoProcessoCivilView.titulo
+        case .codigoProcessoPenal: CodigoProcessoPenalView.titulo
+        case .codigoTributarioNacional: CodigoTributarioNacionalView.titulo
+        case .codigoEleitoral: CodigoEleitoralView.titulo
         }
     }
 
@@ -49,6 +56,8 @@ private enum Livro: CaseIterable, Identifiable {
     var rotulo: String {
         switch self {
         case .codigoProcessoCivil: "Processo Civil"
+        case .codigoProcessoPenal: "Processo Penal"
+        case .codigoTributarioNacional: "Tributário"
         default: titulo
         }
     }
@@ -59,6 +68,9 @@ private enum Livro: CaseIterable, Identifiable {
         case .codigoCivil: "building.2.fill"
         case .codigoPenal: "exclamationmark.shield.fill"
         case .codigoProcessoCivil: "list.bullet.clipboard.fill"
+        case .codigoProcessoPenal: "scalemass.fill"
+        case .codigoTributarioNacional: "banknote.fill"
+        case .codigoEleitoral: "checkmark.seal.fill"
         }
     }
 
@@ -68,6 +80,9 @@ private enum Livro: CaseIterable, Identifiable {
         case .codigoCivil: .indigo
         case .codigoPenal: .red
         case .codigoProcessoCivil: .green
+        case .codigoProcessoPenal: .orange
+        case .codigoTributarioNacional: .teal
+        case .codigoEleitoral: .purple
         }
     }
 
@@ -78,6 +93,9 @@ private enum Livro: CaseIterable, Identifiable {
         case .codigoCivil: CodigoCivilView()
         case .codigoPenal: CodigoPenalView()
         case .codigoProcessoCivil: CodigoProcessoCivilView()
+        case .codigoProcessoPenal: CodigoProcessoPenalView()
+        case .codigoTributarioNacional: CodigoTributarioNacionalView()
+        case .codigoEleitoral: CodigoEleitoralView()
         }
     }
 }
