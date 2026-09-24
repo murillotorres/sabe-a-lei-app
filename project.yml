@@ -20,7 +20,9 @@ targets:
       path: CodigoBrasil/Info.plist
       properties:
         CFBundleDisplayName: "Código Brasil"
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIColorName: FundoAbertura
+          UIImageName: LogoAbertura
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.murillotorres.codigobrasil
