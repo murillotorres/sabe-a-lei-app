@@ -35,17 +35,24 @@ struct PerfilView: View {
                     } label: {
                         Label("Armazenamento", systemImage: "internaldrive")
                     }
+
+                    NavigationLink {
+                        PersonalizarView()
+                    } label: {
+                        Label("Personalizar", systemImage: "textformat.size")
+                    }
+                }
+
+                // Sempre visível: deslogado, a própria tela de favoritos convida a entrar.
+                Section {
+                    NavigationLink {
+                        FavoritosView()
+                    } label: {
+                        Label("Favoritos", systemImage: "star.fill")
+                    }
                 }
 
                 if authStore.isAuthenticated {
-                    Section {
-                        NavigationLink {
-                            FavoritosView()
-                        } label: {
-                            Label("Favoritos", systemImage: "star.fill")
-                        }
-                    }
-
                     Section {
                         Button("Sair", role: .destructive) {
                             authStore.logout()
@@ -63,7 +70,8 @@ struct PerfilView: View {
             }
             .navigationTitle("Perfil")
             .sheet(isPresented: $isPresentingAuth) {
-                AuthView()
+                // Mesma tela das boas-vindas; aqui "Continuar sem login" só fecha a sheet.
+                BoasVindasView { isPresentingAuth = false }
             }
         }
     }

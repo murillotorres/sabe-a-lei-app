@@ -466,7 +466,7 @@ struct ArtigoCardView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(artigo.titulo)
-                    .font(.headline)
+                    .fonteDoLivro(.headline)
                     .foregroundStyle(.tint)
                 if artigo.revogado {
                     Text("Revogado")
@@ -480,7 +480,7 @@ struct ArtigoCardView: View {
             }
             if let rubrica = artigo.rubrica {
                 Text(rubrica)
-                    .font(.subheadline.weight(.semibold))
+                    .fonteDoLivro(.subheadline, peso: .semibold)
                     .foregroundStyle(.primary)
             }
             if mostrarLei, let leiTitulo = artigo.leiTitulo {
@@ -489,7 +489,7 @@ struct ArtigoCardView: View {
                     .foregroundStyle(.secondary)
             }
             Text(artigo.caput)
-                .font(.subheadline)
+                .fonteDoLivro(.subheadline)
                 .foregroundStyle(.primary)
                 .lineLimit(artigo.trechoCorrespondente == nil ? 4 : 2)
 
@@ -528,7 +528,7 @@ struct TrechoCorrespondenteView: View {
                 .fixedSize()
 
             Text(trecho.texto)
-                .font(.caption)
+                .fonteDoLivro(.caption)
                 .foregroundStyle(.primary)
                 .lineLimit(3)
         }

@@ -1,12 +1,13 @@
 import SwiftUI
 
+/// Seções para dentro de um `Form` — quem usa (AuthView, BoasVindasView) põe o `Form` em volta.
 struct LoginForm: View {
     @Environment(AuthStore.self) private var authStore
     @State private var email = ""
     @State private var password = ""
 
     var body: some View {
-        Form {
+        Group {
             Section {
                 TextField("E-mail", text: $email)
                     .textContentType(.emailAddress)
@@ -43,6 +44,8 @@ struct LoginForm: View {
 }
 
 #Preview {
-    LoginForm()
-        .environment(AuthStore())
+    Form {
+        LoginForm()
+    }
+    .environment(AuthStore())
 }

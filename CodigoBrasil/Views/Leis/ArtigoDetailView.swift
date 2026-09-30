@@ -16,6 +16,7 @@ struct ArtigoDetailView: View {
     @State private var errorMessage: String?
     @State private var searchText = ""
     @State private var isTogglingFavorito = false
+    @State private var isPresentingAuth = false
 
     private var artigoAtual: Artigo? { artigo ?? resumo }
 
@@ -60,7 +61,11 @@ struct ArtigoDetailView: View {
     }
 
     private func alternarFavorito() {
-        guard let token = authStore.token else { return }
+        // Sem sessão a estrela continua visível — tocar nela convida a entrar.
+        guard let token = authStore.token else {
+            isPresentingAuth = true
+            return
+        }
         isTogglingFavorito = true
         Task {
             await favoritosStore.alternar(artigoId: artigoId, dispositivoId: nil, token: token)
@@ -74,7 +79,7 @@ struct ArtigoDetailView: View {
             // título), centralizado e fixo — não rola junto com o conteúdo.
             if let rubrica = artigoAtual?.rubrica {
                 Text(rubrica)
-                    .font(.title3.bold())
+                    .fonteDoLivro(.title3, peso: .bold)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
@@ -126,14 +131,15 @@ struct ArtigoDetailView: View {
         .searchable(text: $searchText, prompt: "Buscar neste artigo")
         .naoEsconderBarraNaBusca()
         .toolbar {
-            if authStore.isAuthenticated {
-                ToolbarItem(placement: .topBarTrailing) {
-                    botaoFavorito
-                }
+            ToolbarItem(placement: .topBarTrailing) {
+                botaoFavorito
             }
             if #available(iOS 26.0, *) {
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
             }
+        }
+        .sheet(isPresented: $isPresentingAuth) {
+            AuthView()
         }
         .task { await load() }
     }
@@ -165,7 +171,7 @@ private struct ArtigoCaputCardView: View {
                 SeloRevogadoView()
             }
             Text(artigo.caput)
-                .font(.body)
+                .fonteDoLivro(.body)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -249,7 +255,7 @@ struct DispositivoCardView: View {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(dispositivo.texto)
-                        .font(.subheadline)
+                        .fonteDoLivro(.subheadline)
                     if dispositivo.revogado {
                         SeloRevogadoView()
                     }
@@ -295,7 +301,7 @@ private struct SubitemView: View {
             )
             VStack(alignment: .leading, spacing: 4) {
                 Text(subitem.texto)
-                    .font(.subheadline)
+                    .fonteDoLivro(.subheadline)
                 if subitem.revogado {
                     SeloRevogadoView()
                 }

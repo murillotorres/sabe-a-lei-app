@@ -21,11 +21,13 @@ struct AuthView: View {
                 .pickerStyle(.segmented)
                 .padding()
 
-                switch mode {
-                case .login:
-                    LoginForm()
-                case .register:
-                    RegisterForm()
+                Form {
+                    switch mode {
+                    case .login:
+                        LoginForm()
+                    case .register:
+                        RegisterForm()
+                    }
                 }
             }
             .navigationTitle(mode.rawValue)

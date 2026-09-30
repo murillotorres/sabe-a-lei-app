@@ -57,7 +57,7 @@ private struct FavoritoRowView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(favorito.artigo.titulo)
-                    .font(.headline)
+                    .fonteDoLivro(.headline)
                     .foregroundStyle(.tint)
                 if favorito.artigo.revogado {
                     Text("Revogado")
@@ -70,7 +70,7 @@ private struct FavoritoRowView: View {
                 Spacer()
             }
             Text(favorito.artigo.caput)
-                .font(.subheadline)
+                .fonteDoLivro(.subheadline)
                 .foregroundStyle(.primary)
                 .lineLimit(favorito.dispositivo == nil ? 4 : 2)
 
