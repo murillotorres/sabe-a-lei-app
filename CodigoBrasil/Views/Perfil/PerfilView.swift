@@ -2,7 +2,9 @@ import SwiftUI
 
 struct PerfilView: View {
     @Environment(AuthStore.self) private var authStore
+    @Environment(EstudosStore.self) private var estudos
     @State private var isPresentingAuth = false
+    @State private var confirmandoSaida = false
 
     var body: some View {
         NavigationStack {
@@ -50,12 +52,34 @@ struct PerfilView: View {
                     } label: {
                         Label("Favoritos", systemImage: "star.fill")
                     }
+
+                    NavigationLink {
+                        MinhasAnotacoesView()
+                    } label: {
+                        Label("Minhas anotações", systemImage: "highlighter")
+                    }
                 }
 
                 if authStore.isAuthenticated {
                     Section {
                         Button("Sair", role: .destructive) {
-                            authStore.logout()
+                            // Grifos/anotações ainda não enviados: avisa antes.
+                            if estudos.quantidadeDePendencias > 0 {
+                                confirmandoSaida = true
+                            } else {
+                                authStore.logout()
+                            }
+                        }
+                        .confirmationDialog(
+                            "Alterações não sincronizadas",
+                            isPresented: $confirmandoSaida,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Sair mesmo assim", role: .destructive) {
+                                authStore.logout()
+                            }
+                        } message: {
+                            Text("\(estudos.quantidadeDePendencias) alteração(ões) em grifos e anotações ainda não foram enviadas. Elas ficam guardadas neste aparelho e serão sincronizadas quando você entrar de novo nesta conta.")
                         }
                     }
                 } else {
@@ -82,4 +106,5 @@ struct PerfilView: View {
         .environment(AuthStore())
         .environment(FavoritosStore())
         .environment(ArmazenamentoOffline())
+        .environment(EstudosStore())
 }

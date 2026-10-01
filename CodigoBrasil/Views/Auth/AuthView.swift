@@ -8,7 +8,12 @@ struct AuthView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AuthStore.self) private var authStore
-    @State private var mode: Mode = .login
+    @State private var mode: Mode
+
+    /// `criandoConta` abre direto no formulário de cadastro.
+    init(criandoConta: Bool = false) {
+        _mode = State(initialValue: criandoConta ? .register : .login)
+    }
 
     var body: some View {
         NavigationStack {

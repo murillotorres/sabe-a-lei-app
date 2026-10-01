@@ -3,6 +3,7 @@ import SwiftUI
 struct MainTabView: View {
     @Environment(AuthStore.self) private var authStore
     @Environment(FavoritosStore.self) private var favoritosStore
+    @Environment(EstudosStore.self) private var estudos
 
     var body: some View {
         TabView {
@@ -31,10 +32,12 @@ struct MainTabView: View {
                 }
         }
         .task(id: authStore.currentUser?.id) {
-            if let token = authStore.token {
+            if let token = authStore.token, let usuarioId = authStore.currentUser?.id {
+                estudos.entrar(usuarioId: usuarioId, token: token)
                 await favoritosStore.carregar(token: token)
             } else {
                 favoritosStore.limpar()
+                estudos.sair()
             }
         }
     }
@@ -45,4 +48,5 @@ struct MainTabView: View {
         .environment(AuthStore())
         .environment(FavoritosStore())
         .environment(ArmazenamentoOffline())
+        .environment(EstudosStore())
 }

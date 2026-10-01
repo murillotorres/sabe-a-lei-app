@@ -42,12 +42,20 @@ struct APIClient {
         )
     }
 
+    /// `codificador`/`decodificador` substituem os padrões quando o corpo tem
+    /// datas (os padrões não definem formato de data).
     func post<Body: Encodable, Response: Decodable>(
         _ path: String,
         body: Body,
-        token: String? = nil
+        token: String? = nil,
+        prioridade: PrioridadeDeRede = .alta,
+        codificador: JSONEncoder? = nil,
+        decodificador: JSONDecoder? = nil
     ) async throws -> Response {
-        try await send(path: path, method: "POST", body: body, token: token)
+        try await send(
+            path: path, method: "POST", body: body, token: token, prioridade: prioridade,
+            codificador: codificador, decodificador: decodificador
+        )
     }
 
     func delete<Response: Decodable>(
@@ -63,8 +71,12 @@ struct APIClient {
         body: Body?,
         query: [String: String] = [:],
         token: String?,
-        prioridade: PrioridadeDeRede = .alta
+        prioridade: PrioridadeDeRede = .alta,
+        codificador: JSONEncoder? = nil,
+        decodificador: JSONDecoder? = nil
     ) async throws -> Response {
+        let encoder = codificador ?? self.encoder
+        let decoder = decodificador ?? self.decoder
         var url = APIConfig.baseURL.appending(path: path)
         if !query.isEmpty {
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Controllers\AuthController;
 use App\Controllers\BibliotecaController;
+use App\Controllers\EstudoController;
 use App\Controllers\FavoritoController;
 use App\Controllers\LeisController;
 use App\Core\Env;
@@ -20,6 +21,7 @@ $auth = new AuthController();
 $leis = new LeisController();
 $favoritos = new FavoritoController();
 $biblioteca = new BibliotecaController();
+$estudos = new EstudoController();
 
 $router->post('/auth/register', fn () => $auth->register($request));
 $router->post('/auth/login', fn () => $auth->login($request));
@@ -38,5 +40,7 @@ $router->get('/leis/:slug/atualizacoes', fn ($params) => $biblioteca->atualizaco
 $router->get('/favoritos', fn () => $favoritos->listar($request));
 $router->post('/favoritos', fn () => $favoritos->criar($request));
 $router->delete('/favoritos/:id', fn ($params) => $favoritos->remover($request, $params));
+
+$router->post('/estudos/sync', fn () => $estudos->sincronizar($request));
 
 $router->dispatch(Request::method(), Request::path());

@@ -85,3 +85,26 @@ private extension Font.TextStyle {
 
     var pesoNoPadrao: Font.Weight { self == .headline ? .semibold : .regular }
 }
+
+extension UIFont {
+    /// A mesma fonte de `fonteDoLivro`, para texto desenhado pelo UIKit
+    /// (o texto grifável dos artigos, ver `TextoGrifavel`).
+    static func doLivro(_ estilo: UIFont.TextStyle, tamanho: TamanhoDaFonte, dynamicType: DynamicTypeSize) -> UIFont {
+        let tracos = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(dynamicType))
+        let padrao = UIFont.preferredFont(forTextStyle: estilo, compatibleWith: tracos)
+        guard tamanho != .padrao else { return padrao }
+        let base = UIFontMetrics(forTextStyle: estilo).scaledValue(for: estilo.pontosNoPadrao, compatibleWith: tracos)
+        return padrao.withSize(base + tamanho.pontos)
+    }
+}
+
+private extension UIFont.TextStyle {
+    var pontosNoPadrao: CGFloat {
+        switch self {
+        case .body, .headline: return 17
+        case .subheadline: return 15
+        case .footnote: return 13
+        default: return 17
+        }
+    }
+}

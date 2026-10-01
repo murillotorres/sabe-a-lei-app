@@ -5,6 +5,7 @@ struct CodigoBrasilApp: App {
     @State private var authStore = AuthStore()
     @State private var favoritosStore = FavoritosStore()
     @State private var armazenamento = ArmazenamentoOffline()
+    @State private var estudos = EstudosStore()
     @AppStorage(TamanhoDaFonte.chave) private var tamanhoDaFonte = TamanhoDaFonte.padrao.rawValue
     @AppStorage(BoasVindasView.chave) private var boasVindasConcluida = false
     /// Sessão salva no Keychain de uma instalação anterior (o Keychain sobrevive à
@@ -26,6 +27,7 @@ struct CodigoBrasilApp: App {
                 .environment(authStore)
                 .environment(favoritosStore)
                 .environment(armazenamento)
+                .environment(estudos)
                 .environment(\.tamanhoDaFonteDoLivro, TamanhoDaFonte(rawValue: tamanhoDaFonte) ?? .padrao)
                 .task {
                     if jaTemSessao { boasVindasConcluida = true }
@@ -39,6 +41,8 @@ struct CodigoBrasilApp: App {
                 TecladoPreAquecido.agendar()
                 // Verifica atualizações dos livros offline em segundo plano — nunca segura a interface.
                 armazenamento.aoFicarAtivo()
+                // Envia grifos/anotações pendentes e traz os de outros aparelhos.
+                estudos.aoFicarAtivo()
             }
         }
     }
