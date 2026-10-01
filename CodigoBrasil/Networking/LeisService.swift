@@ -42,9 +42,7 @@ enum LeisService {
     }
 
     /// Busca em todas as leis cadastradas (aba Buscar), não só numa lei específica.
-    static func buscarGlobal(query: String) async throws -> [Artigo] {
-        guard !query.isEmpty else { return [] }
-        let response: BuscaResponse = try await APIClient.shared.get("/busca", query: ["q": query])
-        return response.artigos
+    static func buscarGlobal(query: String) async throws -> BuscaResponse {
+        try await APIClient.shared.get("/busca", query: ["q": query])
     }
 }

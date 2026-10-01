@@ -15,6 +15,9 @@ struct ArtigoDetailView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var searchText = ""
+    /// Resultado da busca neste artigo — calculado uma vez, depois do atraso
+    /// da digitação, e não a cada vez que a tela é redesenhada.
+    @State private var busca = ResultadoNoArtigo(consulta: "", blocos: [], sugestao: nil)
     @State private var isTogglingFavorito = false
     @State private var isPresentingAuth = false
 
@@ -25,17 +28,53 @@ struct ArtigoDetailView: View {
     /// priorizando as que aparecem mais próximas umas das outras), só que
     /// aplicado apenas ao conteúdo deste artigo, já carregado localmente. Cada
     /// card é pontuado pelo texto todo (parágrafo/inciso + suas alíneas).
-    private var blocosFiltrados: [BlocoDispositivo] {
-        guard !searchText.isEmpty else { return blocos }
+    /// Palavra que não aparece em nenhum card é completada ou corrigida pelo
+    /// vocabulário do próprio artigo (`CorrecaoDeBusca`) — a consulta corrigida
+    /// vai em `sugestao`.
+    private func buscarNoArtigo(_ consulta: String) -> ResultadoNoArtigo {
+        var tokens = BuscaTexto.tokenizar(consulta)
+        guard !tokens.isEmpty else { return ResultadoNoArtigo(consulta: consulta, blocos: blocos, sugestao: nil) }
 
-        let tokens = BuscaTexto.tokenizar(searchText)
-        guard !tokens.isEmpty else { return blocos }
+        var sugestao: String?
+        var alternativas: [String: [String]] = [:]
+        let textos = blocos.map { BuscaTexto.normalizar($0.textoCompleto) }
+        if let ajuste = CorrecaoDeBusca.ajustarConsulta(
+            tokens,
+            textos: { [artigoAtual?.caput ?? ""] + blocos.map(\.textoCompleto) },
+            aparece: { token in
+                guard let regex = BuscaTexto.compilar([token]).first ?? nil else { return true }
+                return textos.contains { regex.firstMatch(in: $0, range: NSRange($0.startIndex..., in: $0)) != nil }
+            }
+        ) {
+            tokens = ajuste.tokens
+            alternativas = ajuste.alternativas
+            sugestao = ajuste.sugestao
+        }
 
-        return blocos
-            .map { ($0, BuscaTexto.pontuar($0.textoCompleto, tokens: tokens)) }
+        let regexes = BuscaTexto.compilar(tokens, extras: alternativas)
+        let encontrados = zip(blocos, textos)
+            .map { ($0, BuscaTexto.pontuarNormalizado($1, tokens: tokens, regexes: regexes)) }
             .filter { $0.1 > 0 }
             .sorted { $0.1 > $1.1 }
             .map { $0.0 }
+        return ResultadoNoArtigo(consulta: consulta, blocos: encontrados, sugestao: sugestao)
+    }
+
+    /// Espera a digitação parar (`BuscaTexto.atrasoDaDigitacao`) e busca.
+    /// Campo vazio volta ao artigo inteiro na hora.
+    private func atualizarBusca() async {
+        let consulta = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !consulta.isEmpty else {
+            busca = ResultadoNoArtigo(consulta: "", blocos: [], sugestao: nil)
+            return
+        }
+
+        do {
+            try await Task.sleep(for: BuscaTexto.atrasoDaDigitacao)
+        } catch {
+            return
+        }
+        busca = buscarNoArtigo(consulta)
     }
 
     /// "Artigo 13", ou "Preâmbulo" no único caso em que o artigo não tem número.
@@ -108,12 +147,18 @@ struct ArtigoDetailView: View {
                             .foregroundStyle(.red)
                             .frame(maxWidth: .infinity)
                             .padding(.top, 24)
-                    } else if !searchText.isEmpty && blocosFiltrados.isEmpty {
-                        ContentUnavailableView.search(text: searchText)
-                            .padding(.top, 24)
                     } else {
-                        ForEach(blocosFiltrados) { bloco in
-                            DispositivoCardView(bloco: bloco, destacado: !searchText.isEmpty)
+                        let buscando = !busca.consulta.isEmpty
+                        if buscando && busca.blocos.isEmpty {
+                            ContentUnavailableView.search(text: busca.consulta)
+                                .padding(.top, 24)
+                        } else {
+                            if let sugestao = busca.sugestao {
+                                SugestaoDeBuscaView(sugestao: sugestao, margem: 4)
+                            }
+                            ForEach(buscando ? busca.blocos : blocos) { bloco in
+                                DispositivoCardView(bloco: bloco, destacado: buscando)
+                            }
                         }
                     }
                 }
@@ -142,6 +187,10 @@ struct ArtigoDetailView: View {
             AuthView()
         }
         .task { await load() }
+        // Refaz quando o texto muda ou quando o artigo termina de carregar.
+        .task(id: ChaveDaBusca(texto: searchText, blocos: blocos.count)) {
+            await atualizarBusca()
+        }
     }
 
     private func load() async {
@@ -423,4 +472,16 @@ private extension View {
     }
     .environment(AuthStore())
     .environment(FavoritosStore())
+}
+
+/// Resultado de uma busca dentro do artigo.
+private struct ResultadoNoArtigo {
+    let consulta: String
+    let blocos: [BlocoDispositivo]
+    let sugestao: String?
+}
+
+private struct ChaveDaBusca: Equatable {
+    let texto: String
+    let blocos: Int
 }

@@ -17,11 +17,38 @@ enum BuscaLocal {
         )
     }
 
-    static func buscar(_ livro: LivroOffline, indice: LocalBookStore.IndiceDeBusca, parte: String, consulta: String) -> [Artigo] {
-        let tokens = BuscaTexto.tokenizar(consulta)
-        guard !tokens.isEmpty else { return [] }
+    /// Palavra que não aparece em nenhum artigo da parte é completada ou
+    /// corrigida (`CorrecaoDeBusca`), como faz a API — a consulta corrigida
+    /// volta em `sugestao`.
+    static func buscar(_ livro: LivroOffline, indice: LocalBookStore.IndiceDeBusca, parte: String, consulta: String) -> ResultadoDaBusca {
+        var tokens = BuscaTexto.tokenizar(consulta)
+        guard !tokens.isEmpty else { return ResultadoDaBusca(artigos: [], sugestao: nil) }
 
-        let regexes = BuscaTexto.compilar(tokens)
+        let posicoesDaParte = livro.artigos.indices.filter { livro.artigos[$0].artigo.parte == parte }
+        var sugestao: String?
+        var alternativas: [String: [String]] = [:]
+        if let ajuste = CorrecaoDeBusca.ajustarConsulta(
+            tokens,
+            textos: {
+                // Mesma ordem da API: caput e dispositivos de cada artigo.
+                posicoesDaParte.flatMap { posicao in
+                    [livro.artigos[posicao].artigo.caput] + livro.artigos[posicao].dispositivos.map(\.texto)
+                }
+            },
+            aparece: { token in
+                guard let regex = BuscaTexto.compilar([token]).first ?? nil else { return true }
+                return posicoesDaParte.contains { posicao in
+                    let texto = indice.artigos[posicao]
+                    return regex.firstMatch(in: texto, range: NSRange(texto.startIndex..., in: texto)) != nil
+                }
+            }
+        ) {
+            tokens = ajuste.tokens
+            alternativas = ajuste.alternativas
+            sugestao = ajuste.sugestao
+        }
+
+        let regexes = BuscaTexto.compilar(tokens, extras: alternativas)
         var pontuados: [(artigo: Artigo, pontuacao: Int)] = []
 
         for (posicao, item) in livro.artigos.enumerated() where item.artigo.parte == parte {
@@ -35,9 +62,10 @@ enum BuscaLocal {
         }
 
         // Mais palavras batendo primeiro; entre iguais, a ordem original da lei.
-        return pontuados
+        let artigos = pontuados
             .sorted { $0.pontuacao != $1.pontuacao ? $0.pontuacao > $1.pontuacao : $0.artigo.ordem < $1.artigo.ordem }
             .map(\.artigo)
+        return ResultadoDaBusca(artigos: artigos, sugestao: sugestao)
     }
 
     /// O dispositivo (parágrafo/inciso/alínea) que melhor casa com a busca — o que

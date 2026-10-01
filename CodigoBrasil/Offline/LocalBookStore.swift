@@ -151,7 +151,7 @@ actor LocalBookStore {
     }
 
     /// Busca por texto dentro do livro, com o mesmo critério de relevância da API.
-    func buscarTexto(_ id: String, parte: String, consulta: String) -> [Artigo]? {
+    func buscarTexto(_ id: String, parte: String, consulta: String) -> ResultadoDaBusca? {
         guard var entrada = emMemoria(id) else { return nil }
 
         if entrada.indiceDeBusca == nil {

@@ -85,6 +85,16 @@ struct ArtigosResponse: Decodable {
     /// Só vem quando a requisição pediu paginação (`limit`). Ausente = a
     /// resposta já é o livro inteiro (busca, ou servidor sem paginação).
     let paginacao: Paginacao?
+    /// Só na busca por texto: a consulta corrigida, quando alguma palavra
+    /// estava escrita errado ("legitima defeza" → "legítima defesa").
+    var sugestao: String? = nil
+}
+
+/// Resultado de uma busca por texto dentro de um livro, venha da API ou da
+/// cópia no aparelho.
+struct ResultadoDaBusca: Sendable, Equatable {
+    let artigos: [Artigo]
+    let sugestao: String?
 }
 
 struct Paginacao: Decodable, Equatable {
@@ -96,8 +106,14 @@ struct Paginacao: Decodable, Equatable {
 
 /// Resposta da busca global (/busca) — ao contrário de `ArtigosResponse`, não
 /// fica restrita a uma lei/parte específica, então não traz esses campos.
-struct BuscaResponse: Decodable {
+struct BuscaResponse: Codable, Equatable {
     let artigos: [Artigo]
+    /// Palavras a destacar nos resultados, já normalizadas — as digitadas, com
+    /// singular/plural, sinônimos e correções. Ausente em versões antigas da API.
+    let termos: [String]?
+    /// A consulta corrigida ("homicídio" para "homicido"), quando os resultados
+    /// só saíram corrigindo a digitação.
+    let sugestao: String?
 }
 
 struct ArtigoDetalheResponse: Decodable {

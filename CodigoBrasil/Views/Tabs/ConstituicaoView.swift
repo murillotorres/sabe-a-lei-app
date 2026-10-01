@@ -33,6 +33,9 @@ struct LeiArtigosView: View {
     /// inteiro, e o resultado da consulta atual. O `body` só escolhe qual.
     @State private var gruposTodos: [GrupoArtigos] = []
     @State private var gruposBusca: [GrupoArtigos] = []
+    /// Consulta corrigida da última busca por texto ("legítima defesa" para
+    /// "legitima defeza"), mostrada acima dos resultados.
+    @State private var sugestaoBusca: String?
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var loadedParte: ParteConstitucional?
@@ -184,6 +187,9 @@ struct LeiArtigosView: View {
             ContentUnavailableView.search(text: searchText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
+            if !consultaVazia, let sugestaoBusca {
+                SugestaoDeBuscaView(sugestao: sugestaoBusca)
+            }
             ArtigoListView(
                 grupos: gruposExibidos,
                 // Durante uma consulta a lista é o resultado dela, não o livro em páginas.
@@ -203,11 +209,22 @@ struct LeiArtigosView: View {
         guard !consulta.isEmpty else {
             isSearchingRemote = false
             if !gruposBusca.isEmpty { gruposBusca = [] }
+            sugestaoBusca = nil
+            return
+        }
+
+        // Espera a digitação parar antes de buscar (número ou texto). O
+        // indicador já aparece: sem ele, a tela diria "nenhum resultado"
+        // enquanto espera.
+        isSearchingRemote = true
+        do {
+            try await Task.sleep(for: BuscaTexto.atrasoDaDigitacao)
+        } catch {
             return
         }
 
         // "5", "art 5", "art. 5" ou "a5" busca o artigo específico, não um texto
-        // solto: consulta local e instantânea, sem debounce.
+        // solto: consulta local, olhando primeiro o que já está carregado.
         if let numero = BuscaLei.numeroReferenciado(consulta) {
             let inicio = ContinuousClock.now
             var grupos = await BuscaLei.porNumero(numero, em: artigos)
@@ -224,6 +241,7 @@ struct LeiArtigosView: View {
 
             guard !Task.isCancelled else { return }
             gruposBusca = grupos
+            sugestaoBusca = nil
             isSearchingRemote = false
             BuscaMetricas.buscaExecutada(
                 origem: "número", consulta: consulta, pesquisados: artigos.count,
@@ -232,30 +250,24 @@ struct LeiArtigosView: View {
             return
         }
 
-        // Texto solto: debounce (só dispara depois que a digitação pausa) e busca
-        // no servidor, que olha também o conteúdo dos dispositivos
-        // (parágrafos/incisos/alíneas), não só o caput.
-        do {
-            try await Task.sleep(for: .milliseconds(250))
-        } catch {
-            return
-        }
-
-        isSearchingRemote = true
+        // Texto solto: busca no livro salvo ou no servidor, que olha também o
+        // conteúdo dos dispositivos (parágrafos/incisos/alíneas), não só o caput.
         let inicioDaRequisicao = ContinuousClock.now
 
-        let encontrados: [Artigo]
+        let resultado: ResultadoDaBusca
         do {
-            encontrados = try await RepositorioDeLivros.buscarTexto(leiSlug: leiSlug, parte: parte, consulta: consulta)
+            resultado = try await RepositorioDeLivros.buscarTexto(leiSlug: leiSlug, parte: parte, consulta: consulta)
         } catch {
-            encontrados = []
+            resultado = ResultadoDaBusca(artigos: [], sugestao: nil)
         }
+        let encontrados = resultado.artigos
 
         guard !Task.isCancelled else { return }
         let grupos = await BuscaLei.agrupar(encontrados)
         guard !Task.isCancelled else { return }
 
         gruposBusca = grupos
+        sugestaoBusca = resultado.sugestao
         isSearchingRemote = false
         BuscaMetricas.buscaExecutada(
             origem: "texto", consulta: consulta, pesquisados: artigos.count,
@@ -456,11 +468,28 @@ struct ArtigoListView: View {
     }
 }
 
+/// "Resultados para **legítima defesa**" — quando a busca corrigiu a digitação.
+/// Usada nas buscas da aba Buscar, dentro do livro e dentro do artigo.
+struct SugestaoDeBuscaView: View {
+    let sugestao: String
+    var margem: CGFloat = 20
+
+    var body: some View {
+        Label {
+            Text("Resultados para **\(sugestao)**")
+        } icon: {
+            Image(systemName: "text.badge.checkmark")
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, margem)
+        .padding(.vertical, 8)
+    }
+}
+
 struct ArtigoCardView: View {
     let artigo: Artigo
-    /// Mostra o título da lei acima do caput — usado na busca global (aba
-    /// Buscar), onde os resultados podem vir de leis diferentes.
-    var mostrarLei: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -482,11 +511,6 @@ struct ArtigoCardView: View {
                 Text(rubrica)
                     .fonteDoLivro(.subheadline, peso: .semibold)
                     .foregroundStyle(.primary)
-            }
-            if mostrarLei, let leiTitulo = artigo.leiTitulo {
-                Text(leiTitulo)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             Text(artigo.caput)
                 .fonteDoLivro(.subheadline)

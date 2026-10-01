@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Request;
 use App\Core\Response;
 use App\Models\Artigo;
+use App\Models\BuscaGlobal;
 use App\Models\Categoria;
 use App\Models\Lei;
 
@@ -52,14 +53,16 @@ final class LeisController
         $busca = trim((string) $request->query('q', ''));
 
         // Busca por texto sempre olha o livro inteiro (a relevância é calculada
-        // sobre todos os artigos), então não é paginada.
+        // sobre todos os artigos), então não é paginada. `sugestao` é a consulta
+        // corrigida, quando alguma palavra estava escrita errado.
         if ($busca !== '') {
-            $registros = Artigo::search((int) $lei['id'], $parte, $busca);
+            $resultado = Artigo::search((int) $lei['id'], $parte, $busca);
 
             Response::json([
                 'lei' => $lei,
                 'parte' => $parte,
-                'artigos' => array_map(fn (array $a) => $this->formatArtigo($a), $registros),
+                'artigos' => array_map(fn (array $a) => $this->formatArtigo($a), $resultado['artigos']),
+                'sugestao' => $resultado['sugestao'],
             ]);
         }
 
@@ -115,16 +118,18 @@ final class LeisController
     }
 
     /// Busca em todas as leis cadastradas (aba Buscar) — ao contrário de
-    /// `artigos()`, não fica restrita a uma lei/parte específica.
+    /// `artigos()`, não fica restrita a uma lei/parte específica. Além dos
+    /// artigos, devolve as palavras a destacar (`termos`, com sinônimos e
+    /// correções) e, se a busca precisou corrigir a digitação, a `sugestao`.
     public function buscar(Request $request): void
     {
-        $busca = trim((string) $request->query('q', ''));
+        $resultado = BuscaGlobal::buscar(trim((string) $request->query('q', '')));
 
-        $artigos = $busca === ''
-            ? []
-            : array_map(fn (array $a) => $this->formatArtigo($a), Artigo::searchGlobal($busca));
-
-        Response::json(['artigos' => $artigos]);
+        Response::json([
+            'artigos' => array_map(fn (array $a) => $this->formatArtigo($a), $resultado['artigos']),
+            'termos' => $resultado['termos'],
+            'sugestao' => $resultado['sugestao'],
+        ]);
     }
 
     public function artigo(Request $request, array $params): void

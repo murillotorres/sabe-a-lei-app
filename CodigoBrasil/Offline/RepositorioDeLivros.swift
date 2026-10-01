@@ -29,12 +29,13 @@ enum RepositorioDeLivros {
         return try await LeisService.artigos(leiSlug: leiSlug, parte: parte, numero: numero).artigos
     }
 
-    static func buscarTexto(leiSlug: String, parte: ParteConstitucional, consulta: String) async throws -> [Artigo] {
+    static func buscarTexto(leiSlug: String, parte: ParteConstitucional, consulta: String) async throws -> ResultadoDaBusca {
         if let local = await LocalBookStore.shared.buscarTexto(leiSlug, parte: parte.rawValue, consulta: consulta) {
             return local
         }
 
-        return try await LeisService.artigos(leiSlug: leiSlug, parte: parte, busca: consulta).artigos
+        let resposta = try await LeisService.artigos(leiSlug: leiSlug, parte: parte, busca: consulta)
+        return ResultadoDaBusca(artigos: resposta.artigos, sugestao: resposta.sugestao)
     }
 
     /// O artigo com seus dispositivos. Procura nos livros salvos antes de ir à API.

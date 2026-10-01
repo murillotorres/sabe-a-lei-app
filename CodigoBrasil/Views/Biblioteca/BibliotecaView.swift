@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Seções da Biblioteca, na ordem em que aparecem.
-private enum CategoriaDaBiblioteca: CaseIterable {
+enum CategoriaDaBiblioteca: CaseIterable {
     case constituicao, codigosPrincipais
 
     var titulo: String {
@@ -13,8 +13,8 @@ private enum CategoriaDaBiblioteca: CaseIterable {
 }
 
 /// Livros da Biblioteca, na ordem em que aparecem. É o que a busca por título
-/// percorre.
-private enum Livro: CaseIterable, Identifiable {
+/// percorre — aqui e na aba Legislação da busca principal (`BuscarView`).
+enum Livro: CaseIterable, Identifiable {
     case constituicao, codigoCivil, codigoPenal, codigoProcessoCivil, codigoProcessoPenal, codigoTributarioNacional, codigoEleitoral
 
     var id: Self { self }
@@ -59,6 +59,61 @@ private enum Livro: CaseIterable, Identifiable {
         case .codigoProcessoPenal: "Processo Penal"
         case .codigoTributarioNacional: "Tributário"
         default: titulo
+        }
+    }
+
+    /// Siglas e apelidos pelos quais o livro também é procurado. Só casam com a
+    /// palavra inteira — "cp" acha o Código Penal, não o CPC nem o CPP.
+    var siglas: [String] {
+        switch self {
+        case .constituicao: ["cf", "cf88", "crfb", "federal", "carta", "magna"]
+        case .codigoCivil: ["cc", "cc02"]
+        case .codigoPenal: ["cp"]
+        case .codigoProcessoCivil: ["cpc", "ncpc"]
+        case .codigoProcessoPenal: ["cpp"]
+        case .codigoTributarioNacional: ["ctn"]
+        case .codigoEleitoral: ["ce"]
+        }
+    }
+
+    /// Classificação usada pelos filtros da busca (`FiltrosDaBusca`).
+    var tipo: TipoDeNorma {
+        self == .constituicao ? .constituicao : .codigo
+    }
+
+    var area: AreaDoDireito {
+        switch self {
+        case .constituicao: .constitucional
+        case .codigoCivil, .codigoProcessoCivil: .civil
+        case .codigoPenal, .codigoProcessoPenal: .penal
+        case .codigoTributarioNacional: .tributario
+        case .codigoEleitoral: .eleitoral
+        }
+    }
+
+    /// Todo o acervo atual é legislação federal.
+    var abrangencia: Abrangencia { .nacional }
+
+    static func porSlug(_ slug: String?) -> Livro? {
+        allCases.first { $0.slug == slug }
+    }
+
+    /// Livros em que cada palavra digitada está no título ou é uma das siglas,
+    /// sem distinguir maiúsculas, acentos, hífen nem pontuação. No título vale
+    /// "contém" (e não palavra inteira) pra que a lista já reaja enquanto a
+    /// palavra ainda está sendo digitada, e erro de digitação é tolerado
+    /// ("constituisao", "codgo penal"). Com a busca vazia, todos.
+    static func buscar(_ consulta: String) -> [Livro] {
+        let palavras = BuscaTexto.tokenizar(consulta)
+        guard !palavras.isEmpty else { return allCases }
+        return allCases.filter { livro in
+            let titulo = BuscaTexto.normalizar(livro.titulo)
+            let palavrasDoTitulo = BuscaTexto.tokenizar(livro.titulo)
+            return palavras.allSatisfy { palavra in
+                titulo.contains(palavra)
+                    || livro.siglas.contains(palavra)
+                    || palavrasDoTitulo.contains { CorrecaoDeBusca.parecidas(palavra, $0) }
+            }
         }
     }
 
@@ -116,17 +171,8 @@ struct BibliotecaView: View {
         armazenamento.estado(de: slug).disponivelOffline
     }
 
-    /// Livros cujo título contém todas as palavras digitadas, sem distinguir
-    /// maiúsculas nem acentos. "Contém" (e não palavra inteira) pra que a lista
-    /// já reaja enquanto a palavra ainda está sendo digitada. Com a busca
-    /// vazia, todos.
     private var livrosExibidos: [Livro] {
-        let palavras = BuscaTexto.tokenizar(searchText)
-        guard !palavras.isEmpty else { return Livro.allCases }
-        return Livro.allCases.filter { livro in
-            let titulo = BuscaTexto.normalizar(livro.titulo)
-            return palavras.allSatisfy(titulo.contains)
-        }
+        Livro.buscar(searchText)
     }
 
     /// Os livros exibidos separados por categoria; categoria sem nenhum livro

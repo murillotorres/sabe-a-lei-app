@@ -56,15 +56,15 @@ final class Artigo
     }
 
     /// Todos os artigos de todas as leis cadastradas, com o slug/título da lei
-    /// já incluídos — usado pela busca global (aba Buscar), que não fica
-    /// restrita a uma lei/parte específica como a busca dentro da Constituição.
+    /// já incluídos — usado pela busca global (aba Buscar, ver `BuscaGlobal`),
+    /// que não fica restrita a uma lei/parte específica.
     public static function listAll(): array
     {
         $stmt = Database::connection()->prepare(
             'SELECT a.id, a.parte, a.numero, a.titulo_estrutural, a.capitulo_estrutural,
                     a.secao_estrutural, a.subsecao_estrutural, a.descricao_estrutural,
                     a.rubrica, a.caput, a.revogado, a.ordem,
-                    leis.slug AS lei_slug, leis.titulo AS lei_titulo
+                    a.lei_id, leis.slug AS lei_slug, leis.titulo AS lei_titulo
              FROM artigos a
              INNER JOIN leis ON leis.id = a.lei_id
              ORDER BY leis.id, a.parte, a.ordem'
@@ -76,50 +76,59 @@ final class Artigo
 
     /// Busca por palavras soltas dentro de uma lei/parte específica (ex.: só o
     /// texto permanente da Constituição). Ver `pontuarEOrdenar` pro critério
-    /// de relevância.
+    /// de relevância. Palavra que não aparece em nenhum artigo é completada ou
+    /// corrigida (`CorrecaoDeBusca`); a consulta corrigida volta em `sugestao`.
+    /// @return array{artigos: array, sugestao: ?string}
     public static function search(int $leiId, string $parte, string $query): array
     {
         $tokens = self::tokenizar($query);
-        if ($tokens === []) {
-            return [];
+        $artigos = $tokens === [] ? [] : self::listByLei($leiId, $parte);
+        if ($artigos === []) {
+            return ['artigos' => [], 'sugestao' => null];
         }
 
-        return self::pontuarEOrdenar(self::listByLei($leiId, $parte), $tokens);
-    }
+        $dispositivos = self::dispositivosPorArtigo(array_map(static fn (array $a) => (int) $a['id'], $artigos));
+        $textos = array_map(
+            static fn (array $a) => $a['caput'] . ' ' . implode(' ', array_column($dispositivos[(int) $a['id']] ?? [], 'texto')),
+            $artigos
+        );
+        $normalizados = array_map(self::normalizar(...), $textos);
 
-    /// Mesma busca, mas em todas as leis cadastradas — usada pela aba Buscar.
-    public static function searchGlobal(string $query): array
-    {
-        $tokens = self::tokenizar($query);
-        if ($tokens === []) {
-            return [];
-        }
+        $ajuste = CorrecaoDeBusca::ajustar(
+            $tokens,
+            static function (string $token) use ($normalizados): bool {
+                $padrao = self::padraoDoToken($token);
+                foreach ($normalizados as $texto) {
+                    if (preg_match($padrao, $texto) === 1) {
+                        return true;
+                    }
+                }
+                return false;
+            },
+            static fn () => $textos,
+        );
 
-        return self::pontuarEOrdenar(self::listAll(), $tokens);
+        return [
+            'artigos' => self::pontuarEOrdenar(
+                $artigos, $ajuste['tokens'] ?? $tokens, $dispositivos, $normalizados, $ajuste['alternativas'] ?? []
+            ),
+            'sugestao' => $ajuste['sugestao'] ?? null,
+        ];
     }
 
     /// Pontua cada artigo pela compatibilidade com as palavras buscadas e
     /// ordena por relevância: quanto mais palavras da busca o artigo contém,
     /// mais relevante ele é; entre artigos igualmente relevantes, prevalece a
     /// ordem original da lei (e, na busca global, a ordem das leis entre si).
-    private static function pontuarEOrdenar(array $artigos, array $tokens): array
+    private static function pontuarEOrdenar(
+        array $artigos, array $tokens, array $dispositivosPorArtigo, array $normalizados, array $alternativas,
+    ): array
     {
-        if ($artigos === []) {
-            return [];
-        }
-
-        $dispositivosPorArtigo = self::dispositivosPorArtigo(
-            array_map(static fn (array $a) => (int) $a['id'], $artigos)
-        );
-
         $pontuados = [];
-        foreach ($artigos as $artigo) {
+        foreach ($artigos as $indice => $artigo) {
             $dispositivos = $dispositivosPorArtigo[(int) $artigo['id']] ?? [];
-            $textoCombinado = self::normalizar(
-                $artigo['caput'] . ' ' . implode(' ', array_column($dispositivos, 'texto'))
-            );
 
-            $pontuacao = self::pontuar($textoCombinado, $tokens);
+            $pontuacao = self::pontuar($normalizados[$indice], $tokens, $alternativas);
             if ($pontuacao === 0) {
                 continue;
             }
@@ -127,7 +136,7 @@ final class Artigo
             // Quando a busca "bate" em algum dispositivo (parágrafo/inciso/alínea),
             // não só no caput, devolve esse trecho junto — é o que explica pro
             // usuário por que aquele artigo apareceu no resultado.
-            $artigo['trecho_correspondente'] = self::trechoCorrespondente($dispositivos, $tokens);
+            $artigo['trecho_correspondente'] = self::trechoCorrespondente($dispositivos, $tokens, $alternativas);
 
             $pontuados[] = ['artigo' => $artigo, 'pontuacao' => $pontuacao];
         }
@@ -142,7 +151,7 @@ final class Artigo
     }
 
     /// Mapa artigo_id => lista de seus dispositivos (rotulo, texto, tipo).
-    private static function dispositivosPorArtigo(array $artigoIds): array
+    public static function dispositivosPorArtigo(array $artigoIds): array
     {
         if ($artigoIds === []) {
             return [];
@@ -166,13 +175,13 @@ final class Artigo
     /// O dispositivo (parágrafo/inciso/alínea) que melhor casa com a busca,
     /// para mostrar ao usuário qual trecho interno do artigo motivou o resultado.
     /// `null` quando a busca bateu só no caput, sem nenhum dispositivo relevante.
-    private static function trechoCorrespondente(array $dispositivos, array $tokens): ?array
+    private static function trechoCorrespondente(array $dispositivos, array $tokens, array $alternativas): ?array
     {
         $melhor = null;
         $melhorPontuacao = 0;
 
         foreach ($dispositivos as $dispositivo) {
-            $pontuacao = self::pontuar(self::normalizar($dispositivo['texto']), $tokens);
+            $pontuacao = self::pontuar(self::normalizar($dispositivo['texto']), $tokens, $alternativas);
             if ($pontuacao > $melhorPontuacao) {
                 $melhorPontuacao = $pontuacao;
                 $melhor = $dispositivo;
@@ -196,12 +205,13 @@ final class Artigo
     /// entre textos que contêm todas as palavras, prioriza aqueles em que elas
     /// aparecem próximas umas das outras (como na frase digitada), não apenas
     /// espalhadas em pontos distintos de um artigo longo.
-    private static function pontuar(string $texto, array $tokens): int
+    /// `$alternativas`: outras palavras que valem por um token (as completações
+    /// de uma palavra digitada pela metade), além das abreviações.
+    public static function pontuar(string $texto, array $tokens, array $alternativas = []): int
     {
         $ocorrenciasPorToken = [];
         foreach ($tokens as $indice => $token) {
-            $padrao = '/\b' . preg_quote($token, '/') . '\b/u';
-            if (preg_match_all($padrao, $texto, $matches, PREG_OFFSET_CAPTURE) > 0) {
+            if (preg_match_all(self::padraoDoToken($token, $alternativas[$token] ?? []), $texto, $matches, PREG_OFFSET_CAPTURE) > 0) {
                 $ocorrenciasPorToken[$indice] = array_column($matches[0], 1);
             }
         }
@@ -267,25 +277,69 @@ final class Artigo
         return $menor;
     }
 
-    private static function tokenizar(string $query): array
+    /// Abreviações que a busca entende: a palavra digitada casa também com as
+    /// formas listadas ("inc" acha "inciso"; "art" e "artigo" se acham). Mesma
+    /// tabela da busca do app (`BuscaTexto.abreviacoes`).
+    public const ABREVIACOES = [
+        'art' => ['artigo'],
+        'artigo' => ['art'],
+        'arts' => ['artigos'],
+        'artigos' => ['arts'],
+        'par' => ['paragrafo'],
+        'inc' => ['inciso'],
+        'al' => ['alinea'],
+        'cod' => ['codigo'],
+        'const' => ['constituicao'],
+        'dec' => ['decreto'],
+        'proc' => ['processo'],
+        'cf' => ['constituicao federal'],
+        'ec' => ['emenda constitucional'],
+        'lc' => ['lei complementar'],
+        'dl' => ['decreto lei'],
+        'adct' => ['ato das disposicoes constitucionais transitorias'],
+        'stf' => ['supremo tribunal federal'],
+        'stj' => ['superior tribunal de justica'],
+        'tse' => ['tribunal superior eleitoral'],
+        'tst' => ['tribunal superior do trabalho'],
+        'mp' => ['ministerio publico'],
+    ];
+
+    /// Regex de palavra inteira para um token da busca, já com as abreviações
+    /// e as `$extras` (completações).
+    public static function padraoDoToken(string $token, array $extras = []): string
     {
-        $normalizado = self::normalizar($query);
-        $tokens = preg_split('/\s+/', trim($normalizado), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $alternativas = array_map(
+            static fn (string $a) => str_replace(' ', '\s+', preg_quote($a, '/')),
+            [$token, ...(self::ABREVIACOES[$token] ?? []), ...$extras]
+        );
+
+        return '/\b(?:' . implode('|', $alternativas) . ')\b/u';
+    }
+
+    public static function tokenizar(string $query): array
+    {
+        $tokens = preg_split('/[^\p{L}\p{N}]+/u', self::normalizar($query), -1, PREG_SPLIT_NO_EMPTY) ?: [];
 
         return array_values(array_unique($tokens));
     }
 
-    /// Minúsculas e sem acento, para comparação tolerante ("Poder" == "poder" == "PODÉR").
-    private static function normalizar(string $texto): string
+    /// Forma comparável de um texto: minúsculas, sem acento, sem ordinal
+    /// ("5º" = "5"), "§" por extenso e hífen/travessão como espaço ("decreto-lei"
+    /// = "decreto lei"). A pontuação some na separação das palavras. Tem que
+    /// ficar idêntica a `BuscaTexto.normalizar` no app — a busca offline
+    /// depende disso para dar o mesmo resultado.
+    public static function normalizar(string $texto): string
     {
         $texto = mb_strtolower($texto, 'UTF-8');
 
+        static $especiais = ['º' => '', '°' => '', 'ª' => '', '§' => ' paragrafo ',
+            '-' => ' ', '‐' => ' ', '‑' => ' ', '–' => ' ', '—' => ' '];
         static $comAcento = ['á', 'à', 'â', 'ã', 'ä', 'é', 'è', 'ê', 'ë', 'í', 'ì', 'î', 'ï',
             'ó', 'ò', 'ô', 'õ', 'ö', 'ú', 'ù', 'û', 'ü', 'ç', 'ñ'];
         static $semAcento = ['a', 'a', 'a', 'a', 'a', 'e', 'e', 'e', 'e', 'i', 'i', 'i', 'i',
             'o', 'o', 'o', 'o', 'o', 'u', 'u', 'u', 'u', 'c', 'n'];
 
-        return str_replace($comAcento, $semAcento, $texto);
+        return str_replace($comAcento, $semAcento, strtr($texto, $especiais));
     }
 
     public static function find(int $id): ?array
