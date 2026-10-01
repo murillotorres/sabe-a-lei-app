@@ -278,6 +278,55 @@ que muda o número de artigos/dispositivos exige recalcular os `*_id_inicial` da
 - Conferido: numeração sem lacunas nem duplicatas, contagem por nível e amostras de artigos
   contra o HTML de origem. Não foi feita uma revisão artigo a artigo contra o texto oficial.
 
+## Código de Defesa do Consumidor, Código de Trânsito, Código de Processo Penal Militar e Código Penal Militar
+
+Mesmo motor (`parse_planalto.py`), com scripts finos `parse_cdc.py`, `parse_ctb.py`, `parse_cppm.py`,
+`parse_cpm.py`. HTML em `cdc_raw.html`, `ctb_raw.html`, `cppm_raw.html`, `cpm_raw.html`; seeds
+`seed_cdc.sql`, `seed_ctb.sql`, `seed_cppm.sql`, `seed_cpm.sql`.
+
+| | CDC | CTB | CPPM | CPM |
+|---|---|---|---|---|
+| **Lei** (`lei_id`) | `codigo-defesa-consumidor-1990` (8) | `codigo-transito-brasileiro-1997` (9) | `codigo-processo-penal-militar-1969` (10) | `codigo-penal-militar-1969` (11) |
+| **Fonte** | `.../leis/l8078compilado.htm` | `.../leis/l9503compilado.htm` | `.../decreto-lei/del1002.htm` | `.../decreto-lei/del1001.htm` |
+| **Artigos** | 130 (1 a 119 + 11 com sufixo) | 391 (1 a 341 + 50 com sufixo) | 719 (1 a 718 + 1) | 411 (1 a 410 + 1) |
+| **Dispositivos** | 342 | 1.273 (inclui 45 `item`) | 1.003 | 640 |
+| **Rubricas** | — | — | 702 | 393 |
+| **`artigos.id`** | 5499–5628 | 5629–6019 | 6020–6738 | 6739–7149 |
+| **`artigo_dispositivos.id`** | 11230–11571 | 11572–12844 | 12845–13847 | 13848–14487 |
+
+Conferido: numeração sem lacunas nem duplicatas nas quatro, e os seeds de CPP/CTN/CE gerados de novo
+com o motor alterado saem **idênticos** aos anteriores (sem regressão).
+
+### O que entrou no motor
+
+- **Rubricas** (`Lei.rubricas=True`, só nos militares): a epígrafe antes do artigo vai para
+  `artigos.rubrica`, como no Código Penal. Rubrica em `<b>` é reconhecida mesmo terminando em ponto
+  ("Incomunicabilidade do indiciado. Prazo."); sem negrito, vale a linha solta sem pontuação final.
+- **Cabeçalhos em `<h1>`/`<h2>`** (CPM): além de `<p>`, o corte de parágrafos usa essas tags. Sem isso
+  "Pena – …" e o "TÍTULO II" seguinte viravam uma linha só, descartada.
+- **Rótulo riscado partido** (CPM): `<strike>Art.</strike> <strike>64. …</strike>` e `A<strike>rt.</strike>`
+  — os trechos vizinhos são unidos antes de procurar o rótulo; sem isso os Arts. 21, 64, 65, 78 e 127
+  (revogados em 2023) sumiam.
+- **Itens** ("1 - bicicleta", "1. 110 km/h", CTB Arts. 61 e 96) viram `tipo = 'item'` sob a alínea aberta.
+- **Linhas com nota no fim**: "Infração – gravíssima; (Incluído pela Lei nº X) Produção de efeitos" é
+  continuação de texto (antes a nota escondia o ";" e a linha era descartada).
+- **Citação de outra lei entre aspas** (CDC Art. 113): até fechar as aspas, tudo é texto do
+  dispositivo aberto — os "§ 5º"/"§ 6º" citados não viram parágrafos do CDC.
+- Outros erros da fonte: `Art. 7º -A` (espaço antes do sufixo, CTB), `Art. 139-A` e `§ 2º` (Art. 33 do
+  CPPM) em parágrafo centralizado, `§ § 1°`, `6§º`, `4º Se o furto…` sem "§", `Seção I - Dos crimes…`
+  com descrição continuando na linha seguinte em minúscula, `(Incluído dad` sem fechar parêntese.
+
+### Limitações conhecidas
+
+- **CTB sem os Anexos**: o Anexo I (conceitos e definições) e o Anexo II vêm depois das assinaturas e
+  não são artigos — ficaram de fora.
+- No CTB, "Infração – …", "Penalidade – …" e "Medida administrativa – …" são anexadas ao texto do
+  dispositivo aberto (como o "Pena – …" das leis penais), sem tipo próprio.
+- Rubrica de **parágrafo** (CPPM, ex. "Remessa do têrmo de deserção…" antes de um §) é descartada:
+  `rubrica` só existe para artigo. Rubricas revogadas (riscadas) também.
+- Itens aparecem no app com a bolinha cinza padrão (o tipo `item` não tem cor própria em
+  `ArtigoDetailView`).
+
 ## Descrição de cabeçalho e rubrica de artigo
 
 Duas colunas novas em `artigos`, adicionadas depois das quatro leis acima já estarem no ar
@@ -329,7 +378,7 @@ existiam nos dados publicados, não relacionados à feature nova:
 
 ## Pendente (ainda não cadastrado)
 
-- **Outros Códigos** (Defesa do Consumidor, Trânsito, etc.) e **Estatutos** (ECA, Idoso,
+- **Estatutos** (ECA, Idoso,
   etc.) — sem cards na Biblioteca por enquanto (os cards "Códigos", "Estatutos" e "Todas as
   Leis" foram removidos da grade a pedido; as telas placeholder ainda existem em
   `CodigoBrasil/Views/Tabs/` mas não são mais navegáveis).
@@ -353,6 +402,10 @@ mysql -h <host> -u <user> -p < api/database/seed_cpc.sql
 mysql -h <host> -u <user> -p < api/database/seed_cpp.sql
 mysql -h <host> -u <user> -p < api/database/seed_ctn.sql
 mysql -h <host> -u <user> -p < api/database/seed_codigo_eleitoral.sql
+mysql -h <host> -u <user> -p < api/database/seed_cdc.sql
+mysql -h <host> -u <user> -p < api/database/seed_ctb.sql
+mysql -h <host> -u <user> -p < api/database/seed_cppm.sql
+mysql -h <host> -u <user> -p < api/database/seed_cpm.sql
 ```
 
 Depois de importar uma lei **nova**, publique a versão offline dela (ver `VERSIONAMENTO.md`):

@@ -3,7 +3,8 @@
 SQL, no mesmo formato das demais leis (ver api/database/CONTEUDO.md).
 
 Cada lei tem um script fino (`parse_cpp.py`, `parse_ctn.py`,
-`parse_codigo_eleitoral.py`) que só declara a configuração (`Lei`) e chama
+`parse_codigo_eleitoral.py`, `parse_cdc.py`, `parse_ctb.py`, `parse_cppm.py`,
+`parse_cpm.py`) que só declara a configuração (`Lei`) e chama
 `executar()`. Os parsers antigos (Constituição, Código Civil, Código Penal,
 CPC) continuam independentes.
 
@@ -50,14 +51,19 @@ class Lei:
     # TRANSITÓRIAS"): regex do texto inteiro. Encerram a hierarquia em vigor e
     # viram o próprio rótulo estrutural dos artigos seguintes.
     cabecalhos_sem_numeral: tuple = ()
+    # A lei tem epígrafe acima de cada artigo ("Homicídio simples")? Se sim, a
+    # linha solta logo antes de um "Art." vira a `rubrica` dele (como no Código
+    # Penal); senão essas linhas são descartadas.
+    rubricas: bool = False
 
 
 # "At. 248" e "Ar. 337" (sem uma das letras) são erros do próprio Planalto no
 # Código Eleitoral. O sufixo de letra ("3º-A", "121-A", "359-M-A") vem colado ao número ou ao
 # ordinal — nunca com espaço: "Art. 120 - A sentença..." é um separador seguido
-# de frase que começa com "A", e não o artigo 120-A.
+# de frase que começa com "A", e não o artigo 120-A. A exceção é "Art. 7º -A."
+# (CTB): espaço entre o ordinal e o hífen, mas hífen colado na letra.
 RE_ARTIGO = re.compile(
-    r"^A\s?(?:rt|r|t)\.?\s*(\d+(?:\.\d+)?(?:\s\d(?=\.\s))?)\s?(?:[ºo°])?(-[A-Z](?:-[A-Z])?)?(?![A-Za-zÀ-ú])[\s.\-–]*(.*)$", re.S
+    r"^A\s?(?:rt|r|t)\.?\s*(\d+(?:\.\d+)?(?:\s\d(?=\.\s))?)\s?(?:[ºo°](?:\s(?=-[A-Z]))?)?(-[A-Z](?:-[A-Z])?)?(?![A-Za-zÀ-ú])[\s.\-–]*(.*)$", re.S
 )
 # Vários artigos revogados num único parágrafo ("Art. 1.620. a 1.629. ..." ou
 # "Art. 187. (Revogado...) Art. 188. (Revogado...)").
@@ -76,6 +82,9 @@ RE_PARAGRAFO = re.compile(
 # Traço opcional: "III perda..." (sem traço) é um typo real do texto oficial.
 RE_INCISO = re.compile(r"^([IVXLCDM][IVXLCDMl]*)(?:\s*[-–]\s*|\s+)(.*)$", re.S)
 RE_ALINEA = re.compile(r"^([a-z])\)\s*(.*)$", re.S)
+# Item de alínea: "1 - bicicleta;" ou "1. 110 km/h ..." (CTB, Arts. 61 e 96). Só
+# vale com uma alínea aberta — número solto no começo de linha é texto comum.
+RE_ITEM = re.compile(r"^(\d{1,2})\s*[.\-–]\s+(.*)$", re.S)
 
 NUMERAL = (
     r"[IVXLCDM]+(?:-[A-Z])?|PRIMEIR[OA]|SEGUND[OA]|TERCEIR[OA]|QUART[OA]|QUINT[OA]|SEXT[OA]|"
@@ -100,6 +109,14 @@ ROTULO = {
 RE_REVOGADO_INICIO = re.compile(r"^\(?(revogad[ao]s?|vetado)\b", re.I)
 # Linhas soltas que são só links/etiquetas do site, nunca texto de lei.
 RUIDO = {"vigência", "produção de efeitos", "texto compilado", "vide", "*"}
+
+
+# Notas de emenda no fim de uma linha, com os links "Vigência"/"Produção de efeitos".
+# O parêntese final é opcional: "(Incluído dad" (Art. 162 do CTB) vem cortado na fonte.
+RE_NOTAS_FINAIS = re.compile(
+    r"(?:\s*(?:\((?:Reda|Inclu|Revog|Vig|Vide|Produ|Acrescid|Renumerad)[^()]*\)?|Vig[eê]ncia|Produ[cç][aã]o de efeitos))+\s*$",
+    re.I,
+)
 
 
 def limpar_texto(txt: str) -> str:
@@ -131,12 +148,21 @@ def normalizar_descricao(texto):
     return texto[0].upper() + texto[1:].lower() if texto else None
 
 
+def corrigir_rotulo(texto: str) -> str:
+    """Rótulos de parágrafo malformados na fonte (Código de Processo Penal
+    Militar e Código Penal Militar): "§ § 1°", "6§º", e "4º Se o furto…" sem o §."""
+    texto = re.sub(r"^§\s+§\s*", "§ ", texto)  # "§§ 4º e 5º" (sem espaço) é o plural, legítimo
+    texto = re.sub(r"^(\d{1,2})\s*§\s*([ºo°])", r"§ \1\2", texto)
+    return re.sub(r"^(\d{1,2})\s?[º°]\s+(?=[A-ZÀ-Ú])", r"§ \1º ", texto)
+
+
 def eh_nota(texto: str) -> bool:
     """Linha só de citação entre parênteses — "(Incluído pela Lei nº X)"."""
     return texto.startswith("(") and not limpar_citacoes(texto)
 
 
 # Início de um dispositivo (rótulo) dentro de um trecho riscado.
+RE_ABERTURA = re.compile(r"<(?:p|h[1-6])\b[^>]*>", re.I)
 RE_ROTULO_RISCADO = re.compile(
     r"^(A\s?rt\.?\s*\d+(?:\.\d+)?\s?[ºo°]?(?:-[A-Z](?:-[A-Z])?)?\.?"
     r"|§\.?\s*\d+\s?[ºo°]?(?:-[A-Z](?:-[A-Z])?)?"
@@ -164,13 +190,18 @@ def remover_riscados(html: str) -> str:
       o artigo simplesmente sumiria da numeração."""
     def substituir(m):
         trecho = m.group(0)
-        aberturas = re.findall(r"<p\b[^>]*>", trecho, flags=re.I)
+        aberturas = re.findall(RE_ABERTURA, trecho)
         if aberturas:
             return "".join(aberturas)
         texto = limpar_texto(html_para_texto(trecho))
         rotulo = RE_ROTULO_RISCADO.match(texto)
         return f"{MARCA}{rotulo.group(1)}{MARCA}" if rotulo else ""
 
+    # O rótulo às vezes vem partido em vários <strike> seguidos ("<strike>Art.</strike>
+    # <strike>64. A pena…</strike>", e até "A<strike>rt.</strike>" no Código Penal
+    # Militar): junta os trechos vizinhos do mesmo parágrafo antes de procurar o rótulo.
+    html = re.sub(r"\bA(<strike\b[^>]*>)rt\b", r"\1Art", html, flags=re.I)
+    html = re.sub(r"</strike>(?:\s|&nbsp;|<(?!/?(?:p|h[1-6])\b|/?strike\b)[^>]+>)*<strike\b[^>]*>", " ", html, flags=re.I)
     html = re.sub(r"<strike\b[^>]*>.*?</strike>", substituir, html, flags=re.S | re.I)
     # Riscado só por CSS, sem a tag (também usado pelo Planalto).
     html = re.sub(r"<span\b[^>]*line-through[^>]*>.*?</span>", substituir, html, flags=re.S | re.I)
@@ -182,7 +213,8 @@ def resolver_marcas(texto: str) -> str:
     execução ...)", devolve o rótulo do trecho riscado junto; senão descarta as
     marcas."""
     marcas = re.findall(f"{MARCA}(.*?){MARCA}", texto)
-    restante = limpar_texto(re.sub(f"{MARCA}.*?{MARCA}", " ", texto))
+    # O ponto final do texto riscado às vezes fica fora do <strike> (". (Revogado…)").
+    restante = limpar_texto(re.sub(f"{MARCA}.*?{MARCA}", " ", texto)).lstrip(". ")
     if marcas and re.match(r"^\(?(revogad[ao]s?|suspens[ao])\b", restante, re.I):
         return limpar_texto(f"{marcas[0]} {restante}")
     return restante
@@ -207,8 +239,18 @@ def converter_tabelas(html: str) -> str:
     return re.sub(r"<table\b.*?</table>", tabela, html, flags=re.S | re.I)
 
 
+def eh_negrito(conteudo: str) -> bool:
+    """O parágrafo é todo em <b> (fora as notas de emenda)? É como o Planalto
+    marca as rubricas dos códigos militares."""
+    negrito = limpar_texto(html_para_texto(" ".join(re.findall(r"<b\b[^>]*>(.*?)</b>", conteudo, flags=re.S | re.I))))
+    fora = limpar_texto(html_para_texto(re.sub(r"<b\b[^>]*>.*?</b>", " ", conteudo, flags=re.S | re.I)))
+    return bool(negrito) and not re.sub(RE_NOTAS_FINAIS, "", fora)
+
+
 def extrair_paragrafos(html: str):
-    partes = re.split(r"<p\b([^>]*)>", html, flags=re.I)
+    """(centralizado, texto, linha de tabela, negrito) de cada parágrafo. Os
+    cabeçalhos do Código Penal Militar vêm em <h1>/<h2>, não em <p>."""
+    partes = re.split(r"<(?:p|h[1-6])\b([^>]*)>", html, flags=re.I)
     resultado = []
     for i in range(1, len(partes), 2):
         attrs = partes[i]
@@ -217,7 +259,7 @@ def extrair_paragrafos(html: str):
         centralizado = bool(
             re.search(r'align\s*=\s*"?center', attrs, re.I) or re.search(r"text-align\s*:\s*center", attrs, re.I)
         )
-        resultado.append((centralizado, texto, "data-tabela" in attrs))
+        resultado.append((centralizado, texto, "data-tabela" in attrs, eh_negrito(conteudo)))
     return resultado
 
 
@@ -228,6 +270,7 @@ class Artigo:
         self.revogado = False
         self.contexto = contexto  # rótulos por nível, na ordem de NIVEIS
         self.descricao = descricao
+        self.rubrica = None
         self.dispositivos = []
 
 
@@ -248,7 +291,7 @@ def interpretar(lei: Lei, depurar: bool):
         html = f.read().decode("cp1252")
     paragrafos = extrair_paragrafos(converter_tabelas(remover_riscados(html)))
 
-    inicio = next(i for i, (_, t, _) in enumerate(paragrafos) if t.startswith(lei.inicio))
+    inicio = next(i for i, (_, t, _, _) in enumerate(paragrafos) if t.startswith(lei.inicio))
     fim = next(
         (i for i in range(inicio + 1, len(paragrafos))
          if re.match(r"^((Bras[ií]lia|Rio de Janeiro),\s+(em\s+)?\d|Este texto n[aã]o substitui)", paragrafos[i][1])),
@@ -261,15 +304,21 @@ def interpretar(lei: Lei, depurar: bool):
     # de uma linha centralizada). Fecha no primeiro parágrafo que não é
     # centralizado.
     aguardando = None
+    ultimo_cabecalho = None  # nível do último cabeçalho, enquanto só vierem linhas centralizadas
     artigos: list[Artigo] = []
     artigo_atual = None
     pilha_nivel: dict[int, int] = {}
     # Nível do último parágrafo/inciso aberto: as alíneas penduram nele, não no
     # "max(pilha_nivel)" (que inclui a alínea anterior e faria uma escada).
     nivel_container = 0
+    nivel_alinea = None  # nível da última alínea aberta (pai dos itens)
     nao_reconhecidas: list[str] = []
     linha_solta = False  # a linha anterior era linha de tabela (ver abaixo)
     sem_numeral_ativo = False  # o rótulo de "parte" é um cabeçalho sem numeral
+    # Linha solta candidata a rubrica do próximo artigo (só com `lei.rubricas`).
+    # Vale apenas se a linha seguinte abrir um artigo novo.
+    rubrica_pendente = None
+    em_citacao = False  # entre aspas abertas e não fechadas (ver abaixo)
 
     def contexto():
         return tuple(rotulos[n] for n in NIVEIS)
@@ -289,9 +338,23 @@ def interpretar(lei: Lei, depurar: bool):
         return None
 
     for i in range(inicio + 1, fim):
-        centralizado, texto, tabela = paragrafos[i]
+        centralizado, texto, tabela, negrito = paragrafos[i]
         if not texto or texto.lower() in RUIDO:
             continue
+        if eh_nota(texto) and rubrica_pendente is not None:
+            continue  # "(Redação dada pela Lei nº X)" logo depois da rubrica
+        rubrica, rubrica_pendente = rubrica_pendente, None
+
+        # Dentro de uma citação de outra lei (o Art. 113 do CDC acrescenta §§ à Lei
+        # nº 7.347 citando o texto entre aspas): tudo é texto do dispositivo aberto
+        # até fechar as aspas — os "§ 5º" citados não são parágrafos desta lei.
+        if em_citacao and not centralizado:
+            if RE_ARTIGO.match(texto):
+                em_citacao = False  # aspas que o Planalto esqueceu de fechar
+            else:
+                anexar_texto(texto)
+                em_citacao = not re.search(r"[\"”]", texto)
+                continue
 
         anterior_era_linha_solta, linha_solta = linha_solta, False
         if tabela:
@@ -300,6 +363,12 @@ def interpretar(lei: Lei, depurar: bool):
             linha_solta = True
             continue
 
+        texto = corrigir_rotulo(texto)
+        # "Art. 139-A" do CTB e o "§ 2º" do Art. 33 do CPPM vêm num <p> centralizado por engano.
+        if centralizado and not RE_HEADING.match(texto) and (
+            RE_ARTIGO.match(texto) or RE_PARAGRAFO.match(texto) or RE_PARAGRAFO_UNICO.match(texto)
+        ):
+            centralizado = False
         if centralizado:
             m = RE_HEADING.match(texto)
             if m:
@@ -313,9 +382,17 @@ def interpretar(lei: Lei, depurar: bool):
                 # Um cabeçalho novo encerra tudo o que estava abaixo dele.
                 for n in NIVEIS[NIVEIS.index(nivel) + 1:]:
                     rotulos[n] = descricoes[n] = None
-                resto = limpar_citacoes(m.group(3).strip())
+                # "Seção I - Dos crimes…" (Código Penal Militar): traço entre rótulo e descrição.
+                resto = limpar_citacoes(m.group(3).strip().lstrip("-– "))
                 descricoes[nivel] = normalizar_descricao(resto) if resto else None
                 aguardando = nivel if descricoes[nivel] is None else None
+                ultimo_cabecalho = nivel
+                continue
+
+            # Descrição que já veio na linha do rótulo e continua na seguinte, em
+            # minúscula ("Seção I - Dos crimes contra a liberdade" / "individual").
+            if aguardando is None and ultimo_cabecalho and texto[:1].islower():
+                descricoes[ultimo_cabecalho] = normalizar_descricao(f"{descricoes[ultimo_cabecalho]} {limpar_citacoes(texto)}")
                 continue
 
             if aguardando is not None:
@@ -333,12 +410,13 @@ def interpretar(lei: Lei, depurar: bool):
                 rotulos["parte"] = normalizar_descricao(limpar_citacoes(texto))
                 sem_numeral_ativo = True
                 aguardando = None
+                ultimo_cabecalho = None
                 continue
             # Centralizado que não é cabeçalho nem descrição: dentro de um artigo
             # são as linhas de uma tabela feita à mão com parágrafos centralizados
             # (quadro de coeficientes do Art. 91 do CTN) — vira texto do dispositivo
             # aberto, com os pontilhados de preenchimento trocados por travessão.
-            if artigo_atual is not None:
+            if artigo_atual is not None and not eh_nota(texto):
                 anexar_texto(re.sub(r"\s*\.{4,}\s*", " — ", texto), "; " if anterior_era_linha_solta else " ")
                 linha_solta = True
                 if depurar:
@@ -354,6 +432,7 @@ def interpretar(lei: Lei, depurar: bool):
                 descricoes[aguardando] = normalizar_descricao(f"{atual} {desc}" if atual else desc)
                 continue
         aguardando = None
+        ultimo_cabecalho = None
 
         blocos = RE_MULTI_REVOGADO.findall(texto)
         if len(blocos) >= 2:
@@ -384,6 +463,7 @@ def interpretar(lei: Lei, depurar: bool):
             numero = re.sub(r"[.\s]", "", m.group(1)) + (m.group(2) or "")
             resto = m.group(3).strip()
             artigo_atual = Artigo(numero, contexto(), descricao_atual())
+            artigo_atual.rubrica = rubrica
             artigo_atual.caput = resto
             artigo_atual.revogado = bool(RE_REVOGADO_INICIO.match(resto))
             artigos.append(artigo_atual)
@@ -392,7 +472,10 @@ def interpretar(lei: Lei, depurar: bool):
             continue
 
         if artigo_atual is None:
-            continue  # nota antes do primeiro artigo
+            # Nota antes do primeiro artigo — ou a rubrica do Art. 1º.
+            if lei.rubricas and not eh_nota(texto):
+                rubrica_pendente = limpar_citacoes(texto) or None
+            continue
 
         m = RE_PARAGRAFOS_REVOGADOS.match(texto)
         if m:
@@ -430,6 +513,12 @@ def interpretar(lei: Lei, depurar: bool):
         m = RE_ALINEA.match(texto)
         if m:
             adicionar_dispositivo(artigo_atual, pilha_nivel, "alinea", f"{m.group(1)})", m.group(2).strip(), nivel_container + 1)
+            nivel_alinea = nivel_container + 1
+            continue
+
+        m = RE_ITEM.match(texto)
+        if m and nivel_alinea in pilha_nivel and artigo_atual.dispositivos[pilha_nivel[nivel_alinea]]["tipo"] == "alinea":
+            adicionar_dispositivo(artigo_atual, pilha_nivel, "item", m.group(1), m.group(2).strip(), nivel_alinea + 1)
             continue
 
         # Não bate com nenhum padrão. Ou é texto de lei que o Planalto quebrou em
@@ -437,12 +526,29 @@ def interpretar(lei: Lei, depurar: bool):
         # do compromisso do jurado no Art. 472 do CPP), e então continua o
         # dispositivo aberto; ou é rubrica/nota ("Juiz das Garantias",
         # "(Incluído pela Lei nº X)"), que não é texto de lei e é descartada.
-        if not eh_nota(texto) and (texto[0].islower() or re.search(r"[.;:?!)]$", texto)):
+        # A pontuação final é conferida sem as notas ("Infração – gravíssima;
+        # (Incluído pela Lei nº X) Produção de efeitos", no CTB).
+        sem_notas = re.sub(RE_NOTAS_FINAIS, "", texto)
+        if lei.rubricas and negrito and not eh_nota(texto):
+            rubrica_pendente = limpar_citacoes(texto).rstrip(". ") or None
+            if depurar:
+                nao_reconhecidas.append(f"[Art. {artigo_atual.numero}] (rubrica) {texto[:100]}")
+            continue
+        # Nas leis com rubrica, um ")" final só conta se não for de nota: "Abandono do
+        # processo (Redação dada pela Lei nº X)" é rubrica, não texto.
+        termina_frase = re.search(r"[.;:?!]$", sem_notas) or (
+            re.search(r"[.;:?!)]$", texto) and not (lei.rubricas and sem_notas != texto)
+        )
+        if not eh_nota(texto) and (texto[0].islower() or termina_frase or texto[0] in "\"“"):
             anexar_texto(texto)
+            em_citacao = texto[0] in "\"“" and not re.search(r"[\"”]", texto[1:])
             if depurar:
                 nao_reconhecidas.append(f"[Art. {artigo_atual.numero}] (anexada) {texto[:100]}")
-        elif depurar:
-            nao_reconhecidas.append(f"[Art. {artigo_atual.numero}] {texto[:110]}")
+        else:
+            if lei.rubricas and not eh_nota(texto):
+                rubrica_pendente = limpar_citacoes(texto) or None
+            if depurar:
+                nao_reconhecidas.append(f"[Art. {artigo_atual.numero}] {texto[:110]}")
 
     if depurar:
         sys.stderr.write(f"--- {len(nao_reconhecidas)} linhas não reconhecidas ---\n")
@@ -490,7 +596,7 @@ def emitir_sql(lei: Lei, artigos: list):
             "(" + ", ".join([
                 str(artigo_id), str(lei.lei_id), sql_str("permanente"), sql_str(artigo.numero),
                 sql_str(titulo_estrutural), sql_str(capitulo), sql_str(secao), sql_str(subsecao),
-                sql_str(artigo.descricao), "NULL",  # rubrica: nenhuma destas leis usa a convenção
+                sql_str(artigo.descricao), sql_str(artigo.rubrica),
                 sql_str(artigo.caput), "1" if artigo.revogado else "0", str(ordem_artigo),
             ]) + ")"
         )

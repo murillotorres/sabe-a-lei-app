@@ -2,12 +2,13 @@ import SwiftUI
 
 /// Seções da Biblioteca, na ordem em que aparecem.
 enum CategoriaDaBiblioteca: CaseIterable {
-    case constituicao, codigosPrincipais
+    case constituicao, codigosPrincipais, justicaMilitar
 
     var titulo: String {
         switch self {
         case .constituicao: "Constituição"
         case .codigosPrincipais: "Códigos principais"
+        case .justicaMilitar: "Justiça Militar"
         }
     }
 }
@@ -16,16 +17,22 @@ enum CategoriaDaBiblioteca: CaseIterable {
 /// percorre — aqui e na aba Legislação da busca principal (`BuscarView`).
 enum Livro: CaseIterable, Identifiable {
     case constituicao, codigoCivil, codigoPenal, codigoProcessoCivil, codigoProcessoPenal, codigoTributarioNacional, codigoEleitoral
+    case codigoDefesaConsumidor, codigoTransitoBrasileiro, codigoPenalMilitar, codigoProcessoPenalMilitar
 
     var id: Self { self }
 
-    var categoria: CategoriaDaBiblioteca {
+    /// Seções em que o livro aparece na Biblioteca — os códigos militares estão
+    /// nos principais e de novo em "Justiça Militar".
+    var categorias: [CategoriaDaBiblioteca] {
         switch self {
-        case .constituicao: .constituicao
-        case .codigoCivil, .codigoPenal, .codigoProcessoCivil, .codigoProcessoPenal, .codigoTributarioNacional, .codigoEleitoral:
-            .codigosPrincipais
+        case .constituicao: [.constituicao]
+        case .codigoPenalMilitar, .codigoProcessoPenalMilitar: [.codigosPrincipais, .justicaMilitar]
+        default: [.codigosPrincipais]
         }
     }
+
+    /// Seção principal — a que aparece como subtítulo nos resultados de busca.
+    var categoria: CategoriaDaBiblioteca { categorias[0] }
 
     var slug: String {
         switch self {
@@ -36,6 +43,10 @@ enum Livro: CaseIterable, Identifiable {
         case .codigoProcessoPenal: CodigoProcessoPenalView.slug
         case .codigoTributarioNacional: CodigoTributarioNacionalView.slug
         case .codigoEleitoral: CodigoEleitoralView.slug
+        case .codigoDefesaConsumidor: CodigoDefesaConsumidorView.slug
+        case .codigoTransitoBrasileiro: CodigoTransitoBrasileiroView.slug
+        case .codigoPenalMilitar: CodigoPenalMilitarView.slug
+        case .codigoProcessoPenalMilitar: CodigoProcessoPenalMilitarView.slug
         }
     }
 
@@ -49,6 +60,10 @@ enum Livro: CaseIterable, Identifiable {
         case .codigoProcessoPenal: CodigoProcessoPenalView.titulo
         case .codigoTributarioNacional: CodigoTributarioNacionalView.titulo
         case .codigoEleitoral: CodigoEleitoralView.titulo
+        case .codigoDefesaConsumidor: CodigoDefesaConsumidorView.titulo
+        case .codigoTransitoBrasileiro: CodigoTransitoBrasileiroView.titulo
+        case .codigoPenalMilitar: CodigoPenalMilitarView.titulo
+        case .codigoProcessoPenalMilitar: CodigoProcessoPenalMilitarView.titulo
         }
     }
 
@@ -69,6 +84,10 @@ enum Livro: CaseIterable, Identifiable {
         case .codigoProcessoCivil: "Processo Civil"
         case .codigoProcessoPenal: "Processo Penal"
         case .codigoTributarioNacional: "Tributário"
+        case .codigoDefesaConsumidor: "Consumidor"
+        case .codigoTransitoBrasileiro: "Trânsito"
+        case .codigoPenalMilitar: "Penal Militar"
+        case .codigoProcessoPenalMilitar: "Proc. Militar"
         default: titulo
         }
     }
@@ -84,6 +103,10 @@ enum Livro: CaseIterable, Identifiable {
         case .codigoProcessoPenal: ["cpp"]
         case .codigoTributarioNacional: ["ctn"]
         case .codigoEleitoral: ["ce"]
+        case .codigoDefesaConsumidor: ["cdc"]
+        case .codigoTransitoBrasileiro: ["ctb"]
+        case .codigoPenalMilitar: ["cpm"]
+        case .codigoProcessoPenalMilitar: ["cppm"]
         }
     }
 
@@ -99,6 +122,9 @@ enum Livro: CaseIterable, Identifiable {
         case .codigoPenal, .codigoProcessoPenal: .penal
         case .codigoTributarioNacional: .tributario
         case .codigoEleitoral: .eleitoral
+        case .codigoDefesaConsumidor: .consumidor
+        case .codigoTransitoBrasileiro: .transito
+        case .codigoPenalMilitar, .codigoProcessoPenalMilitar: .militar
         }
     }
 
@@ -137,6 +163,10 @@ enum Livro: CaseIterable, Identifiable {
         case .codigoProcessoPenal: "scalemass.fill"
         case .codigoTributarioNacional: "banknote.fill"
         case .codigoEleitoral: "checkmark.seal.fill"
+        case .codigoDefesaConsumidor: "cart.fill"
+        case .codigoTransitoBrasileiro: "car.fill"
+        case .codigoPenalMilitar: "shield.lefthalf.filled"
+        case .codigoProcessoPenalMilitar: "star.circle.fill"
         }
     }
 
@@ -149,6 +179,10 @@ enum Livro: CaseIterable, Identifiable {
         case .codigoProcessoPenal: .orange
         case .codigoTributarioNacional: .teal
         case .codigoEleitoral: .purple
+        case .codigoDefesaConsumidor: .pink
+        case .codigoTransitoBrasileiro: .cyan
+        case .codigoPenalMilitar: .brown
+        case .codigoProcessoPenalMilitar: .gray
         }
     }
 
@@ -162,6 +196,10 @@ enum Livro: CaseIterable, Identifiable {
         case .codigoProcessoPenal: CodigoProcessoPenalView()
         case .codigoTributarioNacional: CodigoTributarioNacionalView()
         case .codigoEleitoral: CodigoEleitoralView()
+        case .codigoDefesaConsumidor: CodigoDefesaConsumidorView()
+        case .codigoTransitoBrasileiro: CodigoTransitoBrasileiroView()
+        case .codigoPenalMilitar: CodigoPenalMilitarView()
+        case .codigoProcessoPenalMilitar: CodigoProcessoPenalMilitarView()
         }
     }
 }
@@ -191,7 +229,7 @@ struct BibliotecaView: View {
     private var secoes: [(categoria: CategoriaDaBiblioteca, livros: [Livro])] {
         let exibidos = livrosExibidos
         return CategoriaDaBiblioteca.allCases.compactMap { categoria in
-            let livros = exibidos.filter { $0.categoria == categoria }
+            let livros = exibidos.filter { $0.categorias.contains(categoria) }
             return livros.isEmpty ? nil : (categoria, livros)
         }
     }

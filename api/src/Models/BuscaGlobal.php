@@ -56,6 +56,10 @@ final class BuscaGlobal
         'codigo-processo-penal-1941' => ['cpp'],
         'codigo-tributario-nacional-1966' => ['ctn'],
         'codigo-eleitoral-1965' => ['ce'],
+        'codigo-defesa-consumidor-1990' => ['cdc'],
+        'codigo-transito-brasileiro-1997' => ['ctb'],
+        'codigo-penal-militar-1969' => ['cpm'],
+        'codigo-processo-penal-militar-1969' => ['cppm'],
     ];
 
     /// Sinônimos e termos leigos → termos usados na lei (já normalizados). Direcional:

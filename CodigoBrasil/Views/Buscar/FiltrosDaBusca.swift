@@ -17,7 +17,7 @@ enum TipoDeNorma: String, CaseIterable, Identifiable {
 }
 
 enum AreaDoDireito: String, CaseIterable, Identifiable {
-    case penal, civil, constitucional, trabalho, administrativo, tributario, eleitoral
+    case penal, civil, constitucional, trabalho, administrativo, tributario, eleitoral, consumidor, transito, militar
 
     var id: Self { self }
 
@@ -30,6 +30,9 @@ enum AreaDoDireito: String, CaseIterable, Identifiable {
         case .administrativo: "Administrativo"
         case .tributario: "Tributário"
         case .eleitoral: "Eleitoral"
+        case .consumidor: "Consumidor"
+        case .transito: "Trânsito"
+        case .militar: "Militar"
         }
     }
 }
