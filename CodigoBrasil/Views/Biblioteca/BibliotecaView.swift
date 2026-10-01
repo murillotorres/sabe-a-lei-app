@@ -52,6 +52,17 @@ enum Livro: CaseIterable, Identifiable {
         }
     }
 
+    /// Nome por extenso — subtítulo da tela do artigo.
+    var nomeCompleto: String {
+        self == .constituicao ? "Constituição Federal" : titulo
+    }
+
+    /// Botão que leva ao livro inteiro: "Constituição Completa", "Código Civil
+    /// Completo" — concorda com o gênero do nome.
+    var tituloDoLivroCompleto: String {
+        self == .constituicao ? "\(titulo) Completa" : "\(titulo) Completo"
+    }
+
     /// Texto do card, que pode ser mais curto que o título pra caber na grade.
     var rotulo: String {
         switch self {

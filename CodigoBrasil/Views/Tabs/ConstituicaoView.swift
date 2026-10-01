@@ -192,6 +192,7 @@ struct LeiArtigosView: View {
             }
             ArtigoListView(
                 grupos: gruposExibidos,
+                livro: Livro.porSlug(leiSlug),
                 // Durante uma consulta a lista é o resultado dela, não o livro em páginas.
                 temMais: consultaVazia && temMaisArtigos,
                 falhouAoCarregarMais: falhaAoCarregarMais,
@@ -360,6 +361,8 @@ struct ArtigoListView: View {
     /// Já agrupados e prontos pra desenhar (ver `BuscaLei.agrupar`) — o `body`
     /// não filtra, ordena nem reagrupa nada.
     let grupos: [GrupoArtigos]
+    /// Livro da lista — os artigos dela não trazem o slug da lei.
+    var livro: Livro?
     /// Ainda há artigos por carregar depois dos que estão na lista.
     var temMais = false
     var falhouAoCarregarMais = false
@@ -429,7 +432,7 @@ struct ArtigoListView: View {
         .listStyle(.plain)
         .navigationDestination(item: $artigoIdSelecionado) { id in
             if let artigo = artigo(id: id) {
-                ArtigoDetailView(artigoId: id, resumo: artigo)
+                ArtigoDetailView(artigoId: id, resumo: artigo, livro: livro, abertoPeloLivro: true)
             }
         }
     }

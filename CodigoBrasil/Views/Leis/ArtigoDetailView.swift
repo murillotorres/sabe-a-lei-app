@@ -6,7 +6,13 @@ struct ArtigoDetailView: View {
     let artigoId: Int
     /// Dados já conhecidos da listagem, usados para exibir algo enquanto o detalhe carrega.
     var resumo: Artigo?
+    /// Livro do artigo. Quem abre pela lista do livro informa (os artigos de lá
+    /// não trazem o slug); da busca e dos favoritos sai do próprio artigo.
+    var livro: Livro?
+    /// Aberto a partir da lista do próprio livro: ir ao livro completo é só voltar.
+    var abertoPeloLivro = false
 
+    @Environment(\.dismiss) private var dismiss
     @Environment(AuthStore.self) private var authStore
     @Environment(FavoritosStore.self) private var favoritosStore
 
@@ -20,8 +26,20 @@ struct ArtigoDetailView: View {
     @State private var busca = ResultadoNoArtigo(consulta: "", blocos: [], sugestao: nil)
     @State private var isTogglingFavorito = false
     @State private var isPresentingAuth = false
+    @State private var isMostrandoLivro = false
 
     private var artigoAtual: Artigo? { artigo ?? resumo }
+
+    private var livroAtual: Livro? { livro ?? Livro.porSlug(artigoAtual?.leiSlug) }
+
+    /// Volta pro livro se veio dele; senão abre o livro por cima.
+    private func abrirLivro() {
+        if abertoPeloLivro {
+            dismiss()
+        } else {
+            isMostrandoLivro = true
+        }
+    }
 
     /// Filtra e reordena os cards por compatibilidade com a busca — mesmo
     /// critério usado na busca geral da Constituição (quantas palavras batem,
@@ -87,16 +105,54 @@ struct ArtigoDetailView: View {
         favoritosStore.estaFavoritado(artigoId: artigoId, dispositivoId: nil)
     }
 
-    /// Estrela da barra de navegação. Nenhum `.buttonStyle` de propósito: dentro
-    /// de um `ToolbarItem` o sistema já desenha o vidro sozinho (igual ao botão
-    /// voltar) — só o artigo inteiro pode ser favoritado.
-    private var botaoFavorito: some View {
-        Button(action: alternarFavorito) {
-            Image(systemName: isFavorito ? "star.fill" : "star")
-                .foregroundStyle(isFavorito ? .yellow : .primary)
+    /// Menu de ações da barra, no estilo do app Mensagens. Nenhum `.buttonStyle`
+    /// de propósito: dentro de um `ToolbarItem` o sistema já desenha o vidro
+    /// sozinho (igual ao botão voltar) — só o artigo inteiro pode ser favoritado.
+    private var menuDeAcoes: some View {
+        Menu {
+            if let livroAtual {
+                Button(action: abrirLivro) {
+                    Label(livroAtual.tituloDoLivroCompleto, systemImage: livroAtual.icone)
+                }
+            }
+            Button(action: alternarFavorito) {
+                if isFavorito {
+                    Label("Remover dos favoritos", systemImage: "star.slash")
+                } else {
+                    Label("Adicionar aos favoritos", systemImage: "star")
+                }
+            }
+            .disabled(isTogglingFavorito)
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease")
         }
-        .disabled(isTogglingFavorito)
-        .accessibilityLabel(isFavorito ? "Remover dos favoritos" : "Favoritar")
+        .accessibilityLabel("Opções do artigo")
+    }
+
+    /// Título no centro da barra: "Artigo 2" (com uma estrela discreta se for
+    /// favorito) e, embaixo, o livro ("Constituição Federal").
+    private var tituloDaBarra: some View {
+        VStack(spacing: 1) {
+            HStack(spacing: 4) {
+                Text(tituloGrande)
+                    .font(.headline)
+                if isFavorito {
+                    Image(systemName: "star.fill")
+                        .imageScale(.small)
+                        .font(.caption2)
+                        .foregroundStyle(.yellow)
+                        .accessibilityLabel("Favorito")
+                }
+            }
+            if let nome = livroAtual?.nomeCompleto {
+                Text(nome)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     private func alternarFavorito() {
@@ -159,6 +215,10 @@ struct ArtigoDetailView: View {
                             ForEach(buscando ? busca.blocos : blocos) { bloco in
                                 DispositivoCardView(bloco: bloco, destacado: buscando)
                             }
+                            if !buscando, let livroAtual {
+                                LivroCompletoButton(livro: livroAtual, action: abrirLivro)
+                                    .padding(.top, 12)
+                            }
                         }
                     }
                 }
@@ -169,6 +229,9 @@ struct ArtigoDetailView: View {
         // Título nativo, centralizado na barra, na mesma linha do botão voltar.
         .navigationTitle(tituloGrande)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $isMostrandoLivro) {
+            livroAtual?.destino
+        }
         // Sem a barra de tabs nesta tela: o rodapé é da busca.
         .toolbar(.hidden, for: .tabBar)
         // Busca nativa. A partir do iOS 26 o item de busca vai para a barra
@@ -177,7 +240,11 @@ struct ArtigoDetailView: View {
         .naoEsconderBarraNaBusca()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                botaoFavorito
+                menuDeAcoes
+            }
+            // O `navigationTitle` continua valendo pro botão voltar da tela seguinte.
+            ToolbarItem(placement: .principal) {
+                tituloDaBarra
             }
             if #available(iOS 26.0, *) {
                 DefaultToolbarItem(kind: .search, placement: .bottomBar)
@@ -380,6 +447,35 @@ private struct MarcadorView: View {
             .padding(.horizontal, 6)
             .frame(minWidth: lado, minHeight: lado)
             .background(cor, in: Capsule())
+    }
+}
+
+/// Fim do artigo: leva ao livro inteiro ("Constituição Completa").
+private struct LivroCompletoButton: View {
+    let livro: Livro
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: livro.icone)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(livro.cor, in: RoundedRectangle(cornerRadius: 8))
+                Text(livro.tituloDoLivroCompleto)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(12)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
     }
 }
 
